@@ -1,0 +1,81 @@
+// กฎความปลอดภัยของ Firestore สำหรับเฟส 2 (ยังไม่ได้ใช้งานตอนนี้)
+//
+// หลักการ: จำกัดสิทธิ์ที่ฝั่งเซิร์ฟเวอร์เท่านั้น การเช็คใน JS ฝั่งเว็บไม่นับเป็นความปลอดภัย
+// เพราะใครก็แก้โค้ดฝั่งเว็บหรือยิง API ตรง ๆ ได้
+//
+// ก่อนใช้จริง:
+//   1) แทน OWNER_EMAIL_HERE ด้วยอีเมลจริงของเจ้าของ
+//   2) จำกัด Firebase Web API key ใน Google Cloud Console
+//      (HTTP referrer ผูกกับโดเมนที่โฮสต์จริง และเปิดเฉพาะ API ที่ใช้)
+//   3) ใส่เฉพาะโดเมนที่โฮสต์จริงใน Authorized domains ของ Firebase Auth
+//   4) ห้ามใช้กฎแบบ test mode (allow read, write: if true) แม้ชั่วคราว
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(uid) {
+      return request.auth != null
+        && request.auth.uid == uid
+        && request.auth.token.email == 'OWNER_EMAIL_HERE'
+        && request.auth.token.email_verified == true;
+    }
+
+    function validTx(d) {
+      return d.keys().hasOnly(['id','kind','name','amount','type','group','date','createdAt','updatedAt','deleted'])
+        && d.keys().hasAll(['id','kind','name','group','date','createdAt','updatedAt','deleted'])
+        && d.id is string && d.id.size() <= 64
+        && d.kind in ['income','expense']
+        && d.name is string && d.name.size() > 0 && d.name.size() <= 200
+        && (!('amount' in d) || d.amount == null || (d.amount is number && d.amount >= 0 && d.amount < 100000000))
+        && (!('type' in d) || d.type == null || (d.type is string && d.type.size() <= 100))
+        && d.group in ['IN','DE','SD','IV','SV']
+        && d.date is string && d.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && d.createdAt is int && d.updatedAt is int
+        && d.deleted is bool;
+    }
+
+    function validCategory(c) {
+      return c.keys().hasOnly(['name','group','aliases','archived'])
+        && c.keys().hasAll(['name','group','archived'])
+        && c.name is string && c.name.size() > 0 && c.name.size() <= 100
+        && c.group in ['IN','DE','SD','IV','SV']
+        && c.archived is bool
+        && (!('aliases' in c) || (c.aliases is list && c.aliases.size() <= 50));
+    }
+
+    function validSettings(d) {
+      return d.keys().hasOnly(['categories','budgets','openingBalances','carryOverBalance','lastBackupAt','updatedAt'])
+        && d.categories is list && d.categories.size() <= 2000
+        // Firestore rules วนลูปทั้ง list ไม่ได้ จึงสุ่มตรวจโครงสร้างเท่าที่ทำได้
+        && (d.categories.size() == 0 || validCategory(d.categories[0]))
+        && d.budgets is map
+        && d.budgets.keys().hasOnly(['defaults','months'])
+        && (!('defaults' in d.budgets) || d.budgets.defaults is map)
+        && (!('months' in d.budgets) || d.budgets.months is map)
+        && d.openingBalances is map
+        && (!('carryOverBalance' in d) || d.carryOverBalance is bool)
+        && (!('lastBackupAt' in d) || d.lastBackupAt == null || d.lastBackupAt is string)
+        && (!('updatedAt' in d) || d.updatedAt is int);
+    }
+
+    match /users/{uid}/transactions/{txId} {
+      allow read: if isOwner(uid);
+      allow create, update: if isOwner(uid)
+        && validTx(request.resource.data)
+        && request.resource.data.id == txId;
+      allow delete: if isOwner(uid);
+    }
+
+    match /users/{uid}/meta/settings {
+      allow read: if isOwner(uid);
+      allow create, update: if isOwner(uid) && validSettings(request.resource.data);
+      allow delete: if false;
+    }
+
+    // ทุกอย่างที่เหลือปิดหมด
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

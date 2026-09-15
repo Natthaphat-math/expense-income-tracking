@@ -1,0 +1,25 @@
+# ── ข้อมูลการเงินส่วนตัว — ห้ามขึ้น repo สาธารณะเด็ดขาด ──────────────
+# GitHub Pages เสิร์ฟทุกไฟล์ในโฟลเดอร์ที่เผยแพร่ ไม่ใช่เฉพาะไฟล์ที่ลิงก์ถึง
+# ไฟล์สำรองที่หลุดขึ้นมาจะกลายเป็น URL ที่ใครก็โหลดได้ และ Google เก็บ index ได้
+data/
+*.xlsx
+*.xlsm
+*.csv
+*backup*.json
+import-*.json
+tracker-backup-*.json
+
+# Firebase (เฟส 2) — ห้าม commit กุญแจฝั่งเซิร์ฟเวอร์
+.firebaserc
+firebase-debug.log
+*-service-account*.json
+serviceAccountKey.json
+.env
+.env.*
+
+# ไฟล์ขยะของระบบ
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc
+node_modules/
