@@ -1,0 +1,16 @@
+{
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "firebase": "^12.19.0"
+  },
+  "name": "expense-income-tracking",
+  "version": "1.0.0",
+  "private": true,
+  "description": "แอปบันทึกรายรับรายจ่าย — static web app, no build step",
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"test/parser.test.mjs\" \"test/backup.test.mjs\"",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-test \"node --test test/firestore-rules.test.mjs\"",
+    "serve": "python3 -m http.server 8000"
+  }
+}

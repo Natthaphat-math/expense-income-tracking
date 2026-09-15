@@ -97,6 +97,7 @@ export function makeDefaultSettings() {
     openingBalances: {},
     carryOverBalance: true,
     lastBackupAt: null,
+    updatedAt: 0,
   };
 }
 

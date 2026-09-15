@@ -1,8 +1,8 @@
 # Firebase setup (phase 2)
 
-Step-by-step for adding sync to this app. **Nothing here is built yet** — the
-storage adapter boundary in `js/storage.js` is ready for it, but no Firebase
-code ships today. Do these console steps first, then write the adapter.
+Step-by-step for the Firebase console. The client code **is built** — see
+"What ships today" at the bottom. Do these console steps, then sign in from
+the app's ตั้งค่า screen.
 
 Console labels below are the English ones you'll actually see.
 
@@ -66,16 +66,29 @@ complete a sign-in to your project.
    [`docs/firestore.rules`](./firestore.rules), replace `OWNER_EMAIL_HERE`
    with the real email, and **Publish**.
 
-Then verify them before trusting them: the **Rules Playground** (in the Rules
-tab) lets you simulate a request. Check that:
+### Verifying the rules
 
-- an unauthenticated `get` on `/users/abc/transactions/x1` is **denied**
-- a `get` authenticated as a *different* email is **denied**
-- a `create` with `amount: -5` or `group: "XX"` is **denied**
-- a `create` with a valid document as the owner is **allowed**
+Don't trust rules you haven't tested. There's an automated suite for exactly
+this — 18 cases covering who gets in and what they're allowed to write:
 
-If any of the first three is allowed, stop and fix the rules before writing a
-single line of client code.
+```bash
+npm install          # first time only
+npm run test:rules
+```
+
+It runs against a local emulator (needs Java; the first run downloads it) and
+never touches your real data. It checks that an anonymous user is denied, that
+a different email is denied, that an unverified email is denied, that a
+matching email with the wrong uid is denied, that everything outside
+`users/` is closed, and that bad values — negative amounts, unknown groups,
+malformed dates, extra fields — are all rejected, while the owner writing a
+valid document is allowed.
+
+If you'd rather click: the **Rules Playground** in the Rules tab simulates one
+request at a time. Set Location to `/users/abc/transactions/x1`, pick the
+operation, toggle Authenticated, and fill in the auth payload
+(`{"email": "...", "email_verified": true}`). The automated suite is faster and
+covers far more.
 
 ## 6. Restrict the API key
 
@@ -138,3 +151,41 @@ Two things worth deciding before you start:
   and sync to Firestore in the background, rather than replacing it outright.
 - **Don't drop the JSON export.** It's the only backup that survives losing
   access to the Firebase project.
+
+
+---
+
+## What ships today
+
+The client side is written and wired up:
+
+| File | Role |
+|---|---|
+| `js/firebase-config.js` | Your project config. Public by design, as explained above. |
+| `js/remote.js` | Lazily loads the Firebase SDK from the CDN and handles email-link sign-in. |
+| `js/firestore-adapter.js` | `FirestoreAdapter` — the same six methods as `LocalStorageAdapter`. |
+| `js/sync.js` | `SyncManager` — offline-first background sync. |
+| `js/screens/sync-ui.js` | The ซิงก์ข้อมูล card in ตั้งค่า, plus the sign-in sheet. |
+
+Three design decisions worth knowing about:
+
+**localStorage stays the primary store.** Saving a transaction writes to
+localStorage synchronously and returns; the push to Firestore happens in the
+background and is allowed to fail. If the SDK can't load at all — no network,
+CDN blocked — the app runs exactly as it did before, with sync simply showing
+as unavailable. The Firebase import is a dynamic `import()` inside a
+`try/catch` specifically so a CDN failure can never stop the app from booting.
+
+**Conflicts resolve by `updatedAt`, newest wins.** Same rule the JSON import
+already used, via the same `mergeTransactions()` in `js/backup.js`. Settings
+carry their own `updatedAt` so they merge the same way. Data pulled from
+Firestore is run through `sanitizeTransaction()` first — the cloud is treated
+as untrusted input, exactly like an imported file.
+
+**Sign-in uses a pasted link, not a tapped one.** On iOS, tapping the link in
+Mail opens Safari, and a home-screen web app has separate storage from Safari
+— so tapping the link signs you into the wrong place, and the app never sees
+it. The sign-in sheet therefore has a field to paste the link into, which
+completes the sign-in inside the app where the data lives. Tapping still works
+if you use the app in a normal Safari tab; the app detects that case on load
+and finishes sign-in automatically.

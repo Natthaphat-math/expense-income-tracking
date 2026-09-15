@@ -10,6 +10,9 @@ import { renderLog } from './screens/log.js';
 import { renderMonth } from './screens/month.js';
 import { renderYear } from './screens/year.js';
 import { renderSettings } from './screens/settings.js';
+import { handleSignInLinkOnLoad } from './screens/sync-ui.js';
+import { SyncManager } from './sync.js';
+import { SYNC_ENABLED } from './firebase-config.js';
 
 const BACKUP_REMINDER_DAYS = 14;
 
@@ -19,6 +22,7 @@ class App {
     this.root = $('#app');
     this.bar = $('#bottom-bar');
     this.stack = [{ name: 'home', options: {} }];
+    this.sync = null; // SyncManager จะถูกใส่ให้ทีหลัง (ไม่บล็อกการเปิดแอป)
     this.state = {
       monthKey: monthKeyOf(todayISO()),
       year: Number(todayISO().slice(0, 4)),
@@ -144,6 +148,27 @@ async function boot() {
 
   requestPersistentStorage();
   registerServiceWorker();
+  startSync(app);
+}
+
+/**
+ * เริ่มการซิงก์แบบเงียบ ๆ — ห้ามให้ขั้นตอนนี้ทำให้แอปเปิดไม่ขึ้น
+ * ถ้าไม่มีเน็ตหรือโหลด Firebase ไม่ได้ แอปก็ทำงานด้วย localStorage ตามปกติ
+ */
+async function startSync(app) {
+  if (!SYNC_ENABLED) return;
+  try {
+    const sync = new SyncManager(app.store);
+    app.sync = sync;
+    // สถานะซิงก์เปลี่ยน ให้หน้าตั้งค่าที่เปิดอยู่อัปเดตตาม
+    sync.addEventListener('status', () => {
+      if (app.current.name === 'settings') app.render();
+    });
+    await sync.start();
+    await handleSignInLinkOnLoad(app);
+  } catch (err) {
+    console.warn('เริ่มการซิงก์ไม่สำเร็จ — ใช้งานในเครื่องต่อไป', err);
+  }
 }
 
 /** ขอให้เบราว์เซอร์อย่าเก็บกวาดข้อมูลของเราทิ้งเมื่อพื้นที่ใกล้เต็ม */

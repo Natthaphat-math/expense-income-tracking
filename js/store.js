@@ -126,7 +126,10 @@ export class Store extends EventTarget {
   }
 
   async updateSettings(patch) {
-    this.settings = { ...this.settings, ...patch };
+    // ประทับเวลาไว้เพื่อให้การซิงก์รู้ว่าฝั่งไหนใหม่กว่า
+    // ถ้า patch ระบุ updatedAt มาเอง (เช่นตอนรับค่าจากคลาวด์) ให้ใช้ค่านั้น
+    const updatedAt = patch.updatedAt ?? Date.now();
+    this.settings = { ...this.settings, ...patch, updatedAt };
     await this.adapter.saveSettings(this.settings);
     this._changed();
     return this.settings;

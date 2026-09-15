@@ -1,7 +1,7 @@
 // service worker แบบเรียบง่าย — แคชไฟล์ของแอปไว้ให้เปิดได้ตอนออฟไลน์
 // ข้อมูลของผู้ใช้อยู่ใน localStorage ไม่ได้ผ่านที่นี่
 
-const CACHE = 'tet-v1';
+const CACHE = 'tet-v2';
 
 const ASSETS = [
   './',
@@ -27,7 +27,16 @@ const ASSETS = [
   './js/screens/month.js',
   './js/screens/year.js',
   './js/screens/settings.js',
+  './js/screens/sync-ui.js',
+  './js/firebase-config.js',
+  './js/remote.js',
+  './js/firestore-adapter.js',
+  './js/sync.js',
 ];
+
+// SDK ของ Firebase โหลดจาก gstatic — แคชไว้เพื่อให้เปิดแอปตอนออฟไลน์ได้เร็ว
+// ถ้าโหลดไม่ได้ก็ไม่เป็นไร แอปจะทำงานในเครื่องอย่างเดียว
+const FIREBASE_HOST = 'https://www.gstatic.com';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -49,7 +58,24 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
-  if (new URL(request.url).origin !== self.location.origin) return;
+
+  const url = new URL(request.url);
+
+  // ไฟล์ SDK ของ Firebase: ใช้แคชก่อนถ้ามี ไม่มีค่อยโหลดแล้วเก็บไว้
+  if (url.origin === FIREBASE_HOST) {
+    event.respondWith(
+      caches.match(request).then((hit) => hit ?? fetch(request).then((response) => {
+        if (response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE).then((cache) => cache.put(request, copy));
+        }
+        return response;
+      }).catch(() => hit)),
+    );
+    return;
+  }
+
+  if (url.origin !== self.location.origin) return;
 
   // หน้าเว็บ: ลองเครือข่ายก่อนเพื่อให้ได้ของใหม่ ถ้าออฟไลน์ค่อยใช้แคช
   if (request.mode === 'navigate') {

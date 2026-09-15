@@ -121,5 +121,6 @@ export function mergeSettings(defaults, stored) {
       months: { ...(stored.budgets?.months ?? {}) },
     },
     openingBalances: { ...(stored.openingBalances ?? {}) },
+    updatedAt: Number(stored.updatedAt ?? 0),
   };
 }

@@ -12,6 +12,7 @@ import {
   buildBackup, backupFilename, parseBackupFile, mergeTransactions, mergeCategories,
 } from '../backup.js';
 import { addCategoryFlow } from './log.js';
+import { syncCard } from './sync-ui.js';
 
 export function renderSettings(app) {
   const host = el('div', { class: 'screen screen-settings' });
@@ -25,7 +26,7 @@ export function renderSettings(app) {
         el('span', { class: 'btn-icon-placeholder' }),
       ),
       el('div', { class: 'settings-body' },
-        el('div', { class: 'col col-primary' }, backupCard(), importCard()),
+        el('div', { class: 'col col-primary' }, syncCard(app, rerender), backupCard(), importCard()),
         el('div', { class: 'col col-secondary' }, categoriesCard(), budgetsCard(), helpCard()),
       ),
     ];
