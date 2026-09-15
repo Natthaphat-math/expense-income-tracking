@@ -125,3 +125,39 @@ export function daysInMonth(key) {
   const { year, month } = parseMonthKey(key);
   return new Date(year, month, 0).getDate();
 }
+
+/** ชื่อวันแบบย่อ เรียงตาม Date.getDay() (0 = อาทิตย์) */
+const WEEKDAY_SHORT = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+
+export function weekdayShort(iso) {
+  return WEEKDAY_SHORT[fromISODate(iso).getDay()];
+}
+
+/** วันจันทร์ของสัปดาห์ที่วันนั้นอยู่ — สัปดาห์ของแอปเริ่มวันจันทร์ */
+export function startOfWeek(iso) {
+  const date = fromISODate(iso);
+  const offset = (date.getDay() + 6) % 7; // จันทร์ = 0
+  date.setDate(date.getDate() - offset);
+  return toISODate(date);
+}
+
+/** 7 วันของสัปดาห์ เริ่มวันจันทร์ */
+export function weekDays(iso) {
+  const monday = startOfWeek(iso);
+  return Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+}
+
+/** "15 – 21 กันยายน 2026" (ย่อเดือน/ปีเมื่อซ้ำกัน) */
+export function weekRangeLabel(iso) {
+  const days = weekDays(iso);
+  const a = fromISODate(days[0]);
+  const b = fromISODate(days[6]);
+  const sameMonth = a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear();
+  if (sameMonth) {
+    return `${a.getDate()} – ${b.getDate()} ${monthName(a.getMonth() + 1)} ${a.getFullYear()}`;
+  }
+  const sameYear = a.getFullYear() === b.getFullYear();
+  const left = `${a.getDate()} ${monthNameShort(a.getMonth() + 1)}${sameYear ? '' : ` ${a.getFullYear()}`}`;
+  const right = `${b.getDate()} ${monthNameShort(b.getMonth() + 1)} ${b.getFullYear()}`;
+  return `${left} – ${right}`;
+}

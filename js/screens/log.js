@@ -375,7 +375,7 @@ export function renderLog(app, options = {}) {
 
   return el('div', { class: 'screen screen-log' },
     el('header', { class: 'log-head' },
-      el('button', { class: 'btn-icon', type: 'button', 'aria-label': 'ย้อนกลับ', onclick: cancel }, '‹'),
+      el('span', { class: 'btn-icon-placeholder' }),
       el('h1', { class: 'log-title' }, editing ? 'แก้ไขรายการ' : 'บันทึกรายการ'),
       editing
         ? el('button', {

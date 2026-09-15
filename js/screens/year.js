@@ -1,7 +1,7 @@
 // หน้าปี — ภาพรวมทั้งปี เทียบรายเดือน และความคืบหน้าเทียบเป้าหมาย
 
 import { el, replace } from '../dom.js';
-import { formatMoney, formatNumber, monthName, monthTitle, monthKey } from '../format.js';
+import { formatMoney, formatNumber, monthName, monthNameShort, monthTitle, monthKey } from '../format.js';
 import {
   sumByType, budgetFor, activeCategories, BUDGET_GROUPS, groupLabel,
 } from '../model.js';
@@ -16,22 +16,23 @@ const BREAKDOWN_TABS = [
 
 export function renderYear(app, options = {}) {
   const state = {
+    // ปีที่ดูอยู่เก็บที่ app.state เพราะปุ่มเปลี่ยนปีย้ายไปอยู่แถบล่างแล้ว
     year: options.year ?? app.state.year,
     selectedMonth: options.month ?? new Date().getMonth() + 1,
-    tab: 'expense',
+    tab: app.state.yearTab ?? 'expense',
   };
 
   const host = el('div', { class: 'screen screen-year' });
 
   const rerender = () => {
     app.state.year = state.year;
+    app.state.yearTab = state.tab;
     replace(host, build());
   };
 
   function build() {
     const summary = app.store.yearSummary(state.year);
     return [
-      header(),
       el('div', { class: 'year-body' },
         el('div', { class: 'col col-primary' },
           summaryCards(summary),
@@ -43,24 +44,6 @@ export function renderYear(app, options = {}) {
         ),
       ),
     ];
-  }
-
-  function header() {
-    return el('header', { class: 'page-head' },
-      el('button', { class: 'btn-icon', type: 'button', 'aria-label': 'ปิด', onclick: () => app.back() }, '✕'),
-      el('div', { class: 'page-head-center' },
-        el('button', {
-          class: 'btn-icon', type: 'button', 'aria-label': 'ปีก่อนหน้า',
-          onclick: () => { state.year -= 1; rerender(); },
-        }, '‹'),
-        el('span', { class: 'page-title' }, `ปี ${state.year}`),
-        el('button', {
-          class: 'btn-icon', type: 'button', 'aria-label': 'ปีถัดไป',
-          onclick: () => { state.year += 1; rerender(); },
-        }, '›'),
-      ),
-      el('span', { class: 'btn-icon-placeholder' }),
-    );
   }
 
   function summaryCards(summary) {
@@ -82,9 +65,14 @@ export function renderYear(app, options = {}) {
   function chartCard(summary) {
     return el('section', { class: 'card' },
       el('h2', { class: 'card-title' }, 'รายรับ vs รายจ่าย รายเดือน'),
-      groupedBarChart(summary.months, {
-        highlight: state.selectedMonth,
-        onMonth: (m) => app.go('month', { monthKey: m.key }),
+      groupedBarChart(summary.months.map((m) => ({
+        key: m.key,
+        label: monthNameShort(m.month),
+        income: m.income,
+        expense: m.expense,
+      })), {
+        highlight: monthKey(state.year, state.selectedMonth),
+        onSelect: (m) => app.go('month', { monthKey: m.key }),
       }),
       el('p', { class: 'hint' }, 'แตะแท่งของเดือนไหนเพื่อเปิดหน้าเดือนนั้น'),
     );

@@ -20,11 +20,6 @@ export function renderSettings(app) {
 
   function build() {
     return [
-      el('header', { class: 'page-head' },
-        el('button', { class: 'btn-icon', type: 'button', 'aria-label': 'ปิด', onclick: () => app.back() }, '‹'),
-        el('span', { class: 'page-title' }, 'ตั้งค่า'),
-        el('span', { class: 'btn-icon-placeholder' }),
-      ),
       el('div', { class: 'settings-body' },
         el('div', { class: 'col col-primary' }, syncCard(app, rerender), backupCard(), importCard()),
         el('div', { class: 'col col-secondary' }, categoriesCard(), budgetsCard(), helpCard()),

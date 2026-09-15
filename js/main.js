@@ -3,9 +3,9 @@
 import { el, replace, $ } from './dom.js';
 import { LocalStorageAdapter } from './storage.js';
 import { Store } from './store.js';
-import { todayISO, monthKeyOf } from './format.js';
-import { toast } from './ui.js';
-import { renderHome } from './screens/home.js';
+import { todayISO, monthKeyOf, monthTitle, shiftMonthKey } from './format.js';
+import { toast, openMonthPicker } from './ui.js';
+import { renderDay } from './screens/home.js';
 import { renderLog } from './screens/log.js';
 import { renderMonth } from './screens/month.js';
 import { renderYear } from './screens/year.js';
@@ -16,22 +16,38 @@ import { SYNC_ENABLED } from './firebase-config.js';
 
 const BACKUP_REMINDER_DAYS = 14;
 
+/**
+ * หน้าหลักของแอป
+ * label    = ชื่อที่โชว์บนปุ่มวงกลมตอนอยู่หน้านั้น
+ * menuLabel = ชื่อในเมนูตอนกางขึ้นมา (เป็นคำสั่งไปหน้านั้น)
+ */
+const PAGES = [
+  { id: 'day', label: 'วัน', menuLabel: 'วันนี้', mark: '☀' },
+  { id: 'month', label: 'เดือน', menuLabel: 'เดือน', mark: '▦' },
+  { id: 'year', label: 'ปี', menuLabel: 'ปี', mark: '▤' },
+  { id: 'settings', label: '⚙', menuLabel: 'ตั้งค่า', mark: '⚙' },
+];
+
 class App {
   constructor(store) {
     this.store = store;
     this.root = $('#app');
     this.bar = $('#bottom-bar');
-    this.stack = [{ name: 'home', options: {} }];
+    this.stack = [{ name: 'day', options: {} }];
     this.sync = null; // SyncManager จะถูกใส่ให้ทีหลัง (ไม่บล็อกการเปิดแอป)
     this.state = {
+      dayISO: todayISO(),
       monthKey: monthKeyOf(todayISO()),
       year: Number(todayISO().slice(0, 4)),
       monthSections: new Set(['budget']),
+      monthTab: 'expense',
+      yearTab: 'expense',
       dismissedBackupBanner: false,
     };
+    this.menuOpen = false;
     // หน้าไหนก็ตามที่ข้อมูลเปลี่ยน ให้วาดใหม่ เพื่อไม่ต้องจำว่าใครต้องรีเฟรชบ้าง
     this.store.addEventListener('change', () => {
-      if (this.current.name === 'home') this.render();
+      if (this.current.name === 'day') this.render();
     });
   }
 
@@ -39,11 +55,15 @@ class App {
     return this.stack[this.stack.length - 1];
   }
 
+  /** หน้าหลักสี่หน้าสลับกันตรง ๆ ไม่ซ้อนกัน จึงไม่ต้องมีปุ่มย้อนกลับ */
   go(name, options = {}) {
-    this.stack.push({ name, options });
+    this.menuOpen = false;
+    if (PAGES.some((p) => p.id === name)) this.stack = [{ name, options }];
+    else this.stack.push({ name, options });
     this.render();
   }
 
+  /** ปิดหน้าที่ซ้อนอยู่ (เช่นหน้าบันทึกรายการ) กลับไปหน้าหลักที่เปิดไว้ */
   back() {
     if (this.stack.length > 1) this.stack.pop();
     this.render();
@@ -56,7 +76,7 @@ class App {
   render() {
     const { name, options } = this.current;
     const screens = {
-      home: renderHome,
+      day: renderDay,
       log: renderLog,
       month: renderMonth,
       year: renderYear,
@@ -69,33 +89,130 @@ class App {
   }
 
   renderBar(name) {
-    // แถบล่างอยู่เฉพาะหน้าหลัก หน้าอื่นมีปุ่มย้อนกลับของตัวเองอยู่แล้ว
-    if (name !== 'home') {
+    // หน้าบันทึกรายการเป็นฟอร์ม มีปุ่มยกเลิก/บันทึกของตัวเอง
+    // ถ้าโผล่ปุ่มเปลี่ยนหน้ามาด้วยจะกดพลาดแล้วข้อมูลที่พิมพ์ไว้หาย
+    if (name === 'log') {
       replace(this.bar);
       this.bar.hidden = true;
       return;
     }
     this.bar.hidden = false;
-    replace(this.bar,
+    replace(this.bar, this.pageButton(name), this.pageControls(name));
+    this.renderNavBackdrop();
+  }
+
+  /**
+   * ฉากหลังสำหรับปิดเมนู วางไว้ที่ body ไม่ใช่ในแถบล่าง
+   * เพราะแถบล่างใช้ backdrop-filter ซึ่งทำให้ลูกที่ position: fixed
+   * ยึดขนาดกับแถบแทนที่จะเป็นทั้งหน้าจอ
+   */
+  renderNavBackdrop() {
+    const existing = document.querySelector('.pagenav-backdrop');
+    if (!this.menuOpen) {
+      existing?.remove();
+      return;
+    }
+    if (existing) return;
+    document.body.appendChild(el('div', {
+      class: 'pagenav-backdrop',
+      onclick: () => { this.menuOpen = false; this.render(); },
+    }));
+  }
+
+  /**
+   * ระหว่างเมนูกางอยู่ ปุ่มอื่นในแถบล่างให้ปิดเมนูก่อน ไม่ทำงานของตัวเอง
+   * (ฉากหลังคลุมเนื้อหาได้ แต่คลุมแถบล่างไม่ได้ เพราะแถบอยู่เหนือกว่า)
+   */
+  guard(fn) {
+    return () => {
+      if (this.menuOpen) {
+        this.menuOpen = false;
+        this.render();
+        return;
+      }
+      fn();
+    };
+  }
+
+  /** ปุ่มวงกลมมุมซ้ายล่าง แตะแล้วกางขึ้นเป็นเมนูเปลี่ยนหน้า */
+  pageButton(name) {
+    const here = PAGES.find((p) => p.id === name) ?? PAGES[0];
+    const others = PAGES.filter((p) => p.id !== here.id);
+
+    return el('div', { class: `pagenav ${this.menuOpen ? 'pagenav-open' : ''}` },
+      this.menuOpen
+        ? el('div', { class: 'pagenav-menu', role: 'menu' },
+            others.map((page) => el('button', {
+              class: 'pagenav-item', type: 'button', role: 'menuitem',
+              onclick: () => this.go(page.id, page.id === 'day' ? { reset: true } : {}),
+            },
+              el('span', { class: 'pagenav-item-mark', 'aria-hidden': 'true' }, page.mark),
+              el('span', { class: 'pagenav-item-label' }, page.menuLabel),
+            )),
+          )
+        : null,
       el('button', {
-        class: 'bar-side', type: 'button',
-        onclick: () => this.go('year', { year: this.state.year }),
-      }, 'ปี'),
-      el('div', { class: 'bar-center' },
+        class: 'pagenav-button', type: 'button',
+        'aria-haspopup': 'menu',
+        'aria-expanded': this.menuOpen ? 'true' : 'false',
+        'aria-label': `หน้า${here.label} — แตะเพื่อเปลี่ยนหน้า`,
+        onclick: () => { this.menuOpen = !this.menuOpen; this.render(); },
+      },
+        el('span', { class: 'pagenav-button-label' }, here.label),
+      ),
+    );
+  }
+
+  /** ตัวควบคุมของแต่ละหน้า ย้ายลงมาอยู่แถบล่างเพื่อไม่ให้เบียดเนื้อหา */
+  pageControls(name) {
+    if (name === 'day') {
+      return el('div', { class: 'bar-center' },
         el('button', {
           class: 'bar-main bar-income', type: 'button',
-          onclick: () => this.openLog({ kind: 'income' }),
+          onclick: this.guard(() => this.openLog({ kind: 'income', date: this.state.dayISO })),
         }, 'รับ'),
         el('button', {
           class: 'bar-main bar-expense', type: 'button',
-          onclick: () => this.openLog({ kind: 'expense' }),
+          onclick: this.guard(() => this.openLog({ kind: 'expense', date: this.state.dayISO })),
         }, 'จ่าย'),
-      ),
-      el('button', {
-        class: 'bar-side', type: 'button',
-        onclick: () => this.go('month', { monthKey: this.state.monthKey }),
-      }, 'เดือน'),
-    );
+      );
+    }
+
+    if (name === 'month') {
+      return el('div', { class: 'bar-stepper' },
+        el('button', {
+          class: 'btn-icon', type: 'button', 'aria-label': 'เดือนก่อนหน้า',
+          onclick: this.guard(() => { this.state.monthKey = shiftMonthKey(this.state.monthKey, -1); this.render(); }),
+        }, '‹'),
+        el('button', {
+          class: 'bar-stepper-title', type: 'button',
+          onclick: this.guard(() => openMonthPicker({
+            value: this.state.monthKey,
+            onSelect: (key) => { this.state.monthKey = key; this.render(); },
+          })),
+        }, monthTitle(this.state.monthKey)),
+        el('button', {
+          class: 'btn-icon', type: 'button', 'aria-label': 'เดือนถัดไป',
+          onclick: this.guard(() => { this.state.monthKey = shiftMonthKey(this.state.monthKey, 1); this.render(); }),
+        }, '›'),
+      );
+    }
+
+    if (name === 'year') {
+      return el('div', { class: 'bar-stepper' },
+        el('button', {
+          class: 'btn-icon', type: 'button', 'aria-label': 'ปีก่อนหน้า',
+          onclick: this.guard(() => { this.state.year -= 1; this.render(); }),
+        }, '‹'),
+        el('span', { class: 'bar-stepper-title bar-stepper-static' }, `ปี ${this.state.year}`),
+        el('button', {
+          class: 'btn-icon', type: 'button', 'aria-label': 'ปีถัดไป',
+          onclick: this.guard(() => { this.state.year += 1; this.render(); }),
+        }, '›'),
+      );
+    }
+
+    return el('span', { class: 'bar-page-name' }, 'ตั้งค่า');
   }
 
   /** แถบเตือนให้สำรองข้อมูล — ขึ้นเฉพาะตอนที่ห่างจากครั้งล่าสุดนานแล้ว */

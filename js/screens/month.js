@@ -2,7 +2,7 @@
 
 import { el, replace } from '../dom.js';
 import {
-  formatMoney, formatNumber, monthTitle, shiftMonthKey, longDate,
+  formatMoney, formatNumber, monthTitle, longDate,
   daysInMonth, parseMonthKey, monthKey as makeMonthKey, todayISO, monthName,
 } from '../format.js';
 import {
@@ -10,7 +10,7 @@ import {
   BUDGET_GROUPS, targetWord, groupForCategory, groupKind, GROUPS,
 } from '../model.js';
 import { donutChart, lineChart, progressBar } from '../charts.js';
-import { openMonthPicker, openPicker, promptNumber, openSheet, toast, confirmDialog } from '../ui.js';
+import { openPicker, promptNumber, openSheet, toast, confirmDialog } from '../ui.js';
 import { transactionRow } from './home.js';
 
 const BREAKDOWN_TABS = [
@@ -21,8 +21,9 @@ const BREAKDOWN_TABS = [
 
 export function renderMonth(app, options = {}) {
   const state = {
+    // เดือนที่ดูอยู่เก็บไว้ที่ app.state เพราะปุ่มเปลี่ยนเดือนย้ายไปอยู่แถบล่างแล้ว
     key: options.monthKey ?? app.state.monthKey,
-    tab: 'expense',
+    tab: app.state.monthTab ?? 'expense',
     filterType: null,
     open: app.state.monthSections ?? new Set(['budget']),
     selecting: false,
@@ -35,6 +36,7 @@ export function renderMonth(app, options = {}) {
   const rerender = () => {
     app.state.monthKey = state.key;
     app.state.monthSections = state.open;
+    app.state.monthTab = state.tab;
     replace(host, build());
   };
 
@@ -46,7 +48,6 @@ export function renderMonth(app, options = {}) {
       : summary.rows;
 
     return [
-      header(),
       el('div', { class: 'month-body' },
         el('div', { class: 'col col-primary' },
           breakdownCard(summary),
@@ -61,30 +62,6 @@ export function renderMonth(app, options = {}) {
         ),
       ),
     ];
-  }
-
-  function header() {
-    return el('header', { class: 'page-head' },
-      el('button', { class: 'btn-icon', type: 'button', 'aria-label': 'ปิด', onclick: () => app.back() }, '✕'),
-      el('div', { class: 'page-head-center' },
-        el('button', {
-          class: 'btn-icon', type: 'button', 'aria-label': 'เดือนก่อนหน้า',
-          onclick: () => { state.key = shiftMonthKey(state.key, -1); resetSelection(); rerender(); },
-        }, '‹'),
-        el('button', {
-          class: 'page-title-button', type: 'button',
-          onclick: () => openMonthPicker({
-            value: state.key,
-            onSelect: (key) => { state.key = key; resetSelection(); rerender(); },
-          }),
-        }, monthTitle(state.key)),
-        el('button', {
-          class: 'btn-icon', type: 'button', 'aria-label': 'เดือนถัดไป',
-          onclick: () => { state.key = shiftMonthKey(state.key, 1); resetSelection(); rerender(); },
-        }, '›'),
-      ),
-      el('span', { class: 'btn-icon-placeholder' }),
-    );
   }
 
   function breakdownCard(summary) {

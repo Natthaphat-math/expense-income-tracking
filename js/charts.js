@@ -2,7 +2,7 @@
 // ทุกข้อความใส่ผ่าน textContent (svgEl) จึงไม่มีทางแทรก HTML ได้
 
 import { svgEl, el } from './dom.js';
-import { formatMoney, formatNumber, monthNameShort } from './format.js';
+import { formatMoney, formatNumber } from './format.js';
 
 /** จานสีสงบตา ไล่โทนอุ่น-เย็นสลับกัน เพื่อให้ชิ้นติดกันต่างกันชัด */
 export const PALETTE = [
@@ -135,11 +135,14 @@ function donutSlicePath(cx, cy, inner, outer, start, end) {
 }
 
 /**
- * กราฟแท่งคู่ รายรับ vs รายจ่าย 12 เดือน
- * @param {Array<{month:number, income:number, expense:number}>} months
+ * กราฟแท่งคู่ รายรับ vs รายจ่าย — ใช้ได้ทั้งรายเดือนและรายวัน
+ * @param {Array<{key:string, label:string, income:number, expense:number}>} items
+ * @param {object} options
+ * @param {Function} options.onSelect  เรียกเมื่อแตะแท่งของรายการนั้น
+ * @param {string} options.highlight   key ของรายการที่ต้องการเน้น
  */
-export function groupedBarChart(months, { onMonth = null, highlight = null } = {}) {
-  const max = Math.max(1, ...months.map((m) => Math.max(m.income, m.expense)));
+export function groupedBarChart(items, { onSelect = null, highlight = null } = {}) {
+  const max = Math.max(1, ...items.map((m) => Math.max(m.income, m.expense)));
   const width = 720;
   const height = 260;
   const padLeft = 54;
@@ -148,37 +151,42 @@ export function groupedBarChart(months, { onMonth = null, highlight = null } = {
   const padBottom = 40;
   const plotW = width - padLeft - padRight;
   const plotH = height - padTop - padBottom;
-  const slot = plotW / months.length;
+  const slot = plotW / items.length;
   const barW = Math.min(16, slot / 2.8);
   const gap = 3;
 
   const svg = makeSvg(width, height, { 'aria-label': 'รายรับและรายจ่ายรายเดือน' });
 
-  // เส้นแนวนอนและป้ายแกน
+  // เส้นแนวนอนและป้ายแกน — ข้ามป้ายที่ค่าซ้ำกับเส้นก่อนหน้า
+  // (ถ้าไม่ข้าม เดือนที่ยังไม่มีข้อมูลจะโชว์ "1 1 1 0 0" เพราะปัดเลขชนกัน)
+  let lastLabel = null;
   for (const t of [0, 0.25, 0.5, 0.75, 1]) {
     const y = padTop + plotH * (1 - t);
     svg.appendChild(svgEl('line', {
       x1: padLeft, y1: y, x2: width - padRight, y2: y, class: 'grid-line',
     }));
-    svg.appendChild(svgEl('text', {
-      x: padLeft - 8, y: y + 4, 'text-anchor': 'end', class: 'axis-label',
-      text: formatNumber(Math.round(max * t)),
-    }));
+    const label = formatNumber(Math.round(max * t));
+    if (label !== lastLabel) {
+      svg.appendChild(svgEl('text', {
+        x: padLeft - 8, y: y + 4, 'text-anchor': 'end', class: 'axis-label', text: label,
+      }));
+      lastLabel = label;
+    }
   }
 
-  months.forEach((m, index) => {
+  items.forEach((m, index) => {
     const x = padLeft + slot * index + slot / 2;
-    const isHot = highlight === m.month;
+    const isHot = highlight !== null && highlight === m.key;
 
-    if (onMonth) {
+    if (onSelect) {
       const hit = svgEl('rect', {
         x: padLeft + slot * index, y: padTop, width: slot, height: plotH,
         fill: 'transparent', class: 'bar-hit',
       });
       hit.appendChild(svgEl('title', {
-        text: `${monthNameShort(m.month)} — รายรับ ${formatMoney(m.income)}, รายจ่าย ${formatMoney(m.expense)}`,
+        text: `${m.label} — รายรับ ${formatMoney(m.income)}, รายจ่าย ${formatMoney(m.expense)}`,
       }));
-      hit.addEventListener('click', () => onMonth(m));
+      hit.addEventListener('click', () => onSelect(m));
       svg.appendChild(hit);
     }
 
@@ -207,7 +215,7 @@ export function groupedBarChart(months, { onMonth = null, highlight = null } = {
     svg.appendChild(svgEl('text', {
       x, y: height - padBottom + 18, 'text-anchor': 'middle',
       class: isHot ? 'axis-label axis-label-strong' : 'axis-label',
-      text: monthNameShort(m.month), 'pointer-events': 'none',
+      text: m.label, 'pointer-events': 'none',
     }));
   });
 

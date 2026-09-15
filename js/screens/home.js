@@ -1,35 +1,91 @@
 // หน้าหลัก — รายการของวันนี้ และยอดรวมวันนี้
 
 import { el, replace } from '../dom.js';
-import { formatMoney, longDate, todayISO } from '../format.js';
+import {
+  formatMoney, longDate, todayISO,
+  weekDays, weekdayShort, weekRangeLabel,
+} from '../format.js';
+import { groupedBarChart } from '../charts.js';
 import { summarize, groupLabel } from '../model.js';
 import { confirmDialog, toast } from '../ui.js';
 
-export function renderHome(app) {
-  const today = todayISO();
-  const rows = app.store.byDate(today);
-  const { income, expense } = summarize(rows);
+export function renderDay(app) {
+  // เปิดจากเมนู "วันนี้" ให้เด้งกลับมาวันนี้เสมอ
+  if (app.current.options?.reset) app.state.dayISO = todayISO();
 
-  return el('div', { class: 'screen screen-home' },
-    el('header', { class: 'home-head' },
-      el('div', { class: 'home-head-row' },
-        el('p', { class: 'home-date' }, longDate(today)),
-        el('button', {
-          class: 'btn-icon btn-settings', type: 'button', 'aria-label': 'ตั้งค่า',
-          onclick: () => app.go('settings'),
-        }, '⚙'),
-      ),
+  const today = todayISO();
+  const day = app.state.dayISO ?? today;
+  const isToday = day === today;
+  const rows = app.store.byDate(day);
+  const { income, expense } = summarize(rows);
+  // วันอื่นไม่ต้องเติมวันที่ต่อท้าย เพราะหัวข้อด้านบนบอกวันไว้แล้ว
+  // (เติมแล้วป้ายยาวจนตัดบรรทัดบนจอ 390pt)
+  const suffix = isToday ? ' วันนี้' : '';
+
+  return el('div', { class: 'screen screen-day' },
+    el('header', { class: 'day-page-head' },
+      el('p', { class: 'home-date' }, longDate(day)),
+      isToday
+        ? null
+        : el('button', {
+            class: 'chip chip-on', type: 'button',
+            onclick: () => { app.state.dayISO = today; app.render(); },
+          }, 'กลับไปวันนี้'),
       el('div', { class: 'today-totals' },
-        totalCard('รายรับ วันนี้', income, 'income'),
-        totalCard('รายจ่าย วันนี้', expense, 'expense'),
+        totalCard(`รายรับ${suffix}`, income, 'income'),
+        totalCard(`รายจ่าย${suffix}`, expense, 'expense'),
       ),
     ),
     app.backupBanner(),
+    weekCard(app, day),
     el('main', { class: 'home-list' },
       rows.length === 0
-        ? emptyState()
-        : el('ul', { class: 'tx-list' }, rows.map((tx) => transactionRow(app, tx))),
+        ? emptyState(isToday)
+        : el('ul', { class: 'tx-list' }, rows.map((tx) => transactionRow(app, tx, { compact: true }))),
     ),
+  );
+}
+
+/** กราฟรายรับ vs รายจ่ายของสัปดาห์นี้ เริ่มวันจันทร์ */
+function weekCard(app, day) {
+  const days = weekDays(day);
+  const today = todayISO();
+
+  const items = days.map((date) => {
+    const { income, expense } = summarize(app.store.byDate(date));
+    return {
+      key: date,
+      label: weekdayShort(date),
+      income,
+      expense,
+      day: Number(date.slice(8, 10)),
+    };
+  });
+
+  const totals = items.reduce(
+    (acc, d) => ({ income: acc.income + d.income, expense: acc.expense + d.expense }),
+    { income: 0, expense: 0 },
+  );
+  const logged = items.filter((d) => d.key <= today && (d.income > 0 || d.expense > 0)).length;
+  const elapsed = items.filter((d) => d.key <= today).length;
+
+  return el('section', { class: 'card' },
+    el('div', { class: 'card-head' },
+      el('h2', { class: 'card-title' }, 'สัปดาห์นี้'),
+      el('span', { class: 'week-range' }, weekRangeLabel(day)),
+    ),
+    groupedBarChart(items, {
+      highlight: day,
+      onSelect: (item) => { app.state.dayISO = item.key; app.render(); },
+    }),
+    el('div', { class: 'week-summary' },
+      el('span', {}, `รายรับ ${formatMoney(totals.income)}`),
+      el('span', {}, `รายจ่าย ${formatMoney(totals.expense)}`),
+    ),
+    elapsed > 0 && logged < elapsed
+      ? el('p', { class: 'hint' }, `บันทึกไปแล้ว ${logged} จาก ${elapsed} วันที่ผ่านมา`)
+      : null,
+    el('p', { class: 'hint' }, 'แตะแท่งของวันไหนเพื่อดูรายการของวันนั้น'),
   );
 }
 
@@ -40,10 +96,10 @@ function totalCard(label, value, kind) {
   );
 }
 
-function emptyState() {
+function emptyState(isToday) {
   return el('div', { class: 'empty' },
     el('div', { class: 'empty-mark', 'aria-hidden': 'true' }, '☀'),
-    el('p', { class: 'empty-title' }, 'วันนี้ยังไม่มีรายการ'),
+    el('p', { class: 'empty-title' }, isToday ? 'วันนี้ยังไม่มีรายการ' : 'วันนี้ไม่มีรายการที่บันทึกไว้'),
     el('p', { class: 'empty-hint' }, 'กดปุ่ม จ่าย หรือ รับ ด้านล่างเพื่อเริ่มบันทึก'),
     el('p', { class: 'empty-hint' }, 'พิมพ์สั้น ๆ ได้เลย เช่น “ก๋วยเตี๋ยว 20 บาท อาหาร”'),
   );

@@ -27,7 +27,7 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
-  --bar-height: 74px;
+  --bar-height: 84px;
 
   color-scheme: light;
 }
@@ -65,11 +65,9 @@ body.no-scroll { overflow: hidden; }
   padding-bottom: calc(var(--bar-height) + var(--safe-bottom) + 12px);
 }
 
-body[data-screen="log"] .app-root,
-body[data-screen="month"] .app-root,
-body[data-screen="year"] .app-root,
-body[data-screen="settings"] .app-root {
-  padding-bottom: calc(var(--safe-bottom) + 24px);
+/* หน้าบันทึกรายการไม่มีแถบล่าง แต่มีแถบปุ่มยกเลิก/บันทึกของตัวเอง */
+body[data-screen="log"] .app-root {
+  padding-bottom: calc(var(--safe-bottom) + 96px);
 }
 
 /* iOS ขยายหน้าเองเมื่อ input เล็กกว่า 16px — ทุกช่องกรอกจึงต้อง >= 16px */
@@ -951,4 +949,139 @@ p.sync-error {
   border-radius: 999px;
   background: var(--surface-sunk);
   opacity: 1;
+}
+
+/* ======================================================= ปุ่มเปลี่ยนหน้า */
+/* วงกลมมุมซ้ายล่าง อยู่ทุกหน้า แตะแล้วกางเมนูขึ้นด้านบน
+   ใช้แทนปุ่มย้อนกลับทั้งหมด เพราะโหมด standalone ของ iOS ไม่มีปุ่มย้อนกลับ */
+.pagenav { position: relative; flex: none; }
+
+.pagenav-button {
+  position: relative;
+  z-index: 2;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  transition: transform .12s ease, background-color .15s ease;
+}
+.pagenav-button:active { transform: scale(.94); }
+.pagenav-open .pagenav-button {
+  background: var(--accent);
+  border-color: var(--accent);
+  transform: rotate(-90deg);
+}
+.pagenav-button-label {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -.01em;
+}
+.pagenav-open .pagenav-button-label { color: #fff; transform: rotate(90deg); }
+
+.pagenav-backdrop {
+  position: fixed;
+  inset: 0;
+  /* คลุมเนื้อหาไว้ใต้แถบล่าง (แถบอยู่ที่ 40) แตะเนื้อหาที่ไหนก็ปิดเมนู
+     ส่วนปุ่มในแถบจัดการด้วย guard() ใน main.js */
+  z-index: 39;
+  background: rgba(47, 44, 39, .2);
+}
+
+.pagenav-menu {
+  position: absolute;
+  z-index: 2;
+  bottom: calc(100% + 10px);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 18px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 28px rgba(47, 44, 39, .18);
+  animation: pagenav-rise .16s cubic-bezier(.32, .72, 0, 1);
+}
+@keyframes pagenav-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.pagenav-item {
+  min-height: var(--tap);
+  min-width: 132px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px 8px 10px;
+  border-radius: 12px;
+  text-align: left;
+}
+.pagenav-item:active { background: var(--surface-sunk); }
+.pagenav-item-mark {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--surface-sunk);
+  font-size: 15px;
+  color: var(--ink-soft);
+}
+.pagenav-item-label { font-size: 16px; font-weight: 600; }
+
+/* ---------------------------------------- ตัวควบคุมของหน้าในแถบล่าง */
+.bar-stepper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  min-width: 0;
+}
+.bar-stepper-title {
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border-radius: 12px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -.01em;
+  white-space: nowrap;
+}
+.bar-stepper-title:active { background: var(--surface-sunk); }
+.bar-stepper-static { font-weight: 700; }
+.bar-page-name {
+  flex: 1;
+  text-align: right;
+  padding-right: 6px;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+/* ------------------------------------------------------- หน้าวัน */
+.day-page-head { padding: 16px 0 4px; display: flex; flex-direction: column; gap: 8px; }
+.day-page-head .home-date { font-size: 16px; font-weight: 600; color: var(--ink); }
+.day-page-head .chip { align-self: flex-start; }
+
+.week-range { font-size: 13.5px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.week-summary {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  flex-wrap: wrap;
 }
