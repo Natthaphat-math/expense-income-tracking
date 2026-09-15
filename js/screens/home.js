@@ -50,15 +50,37 @@ function emptyState() {
 }
 
 /** แถวรายการหนึ่งรายการ — แตะเพื่อแก้ไขหรือลบ */
-export function transactionRow(app, tx, { showDate = false } = {}) {
+/**
+ * แถวรายการหนึ่งรายการ
+ * @param {object} options
+ * @param {boolean} options.showDate     แสดงวันที่ในบรรทัดรอง
+ * @param {boolean} options.compact      แถวเตี้ยลง เพื่อให้เห็นรายการได้มากขึ้น
+ * @param {boolean} options.selectable   อยู่ในโหมดเลือกหลายรายการ
+ * @param {boolean} options.selected     ถูกเลือกอยู่หรือไม่
+ * @param {Function} options.onToggle    เรียกเมื่อแตะในโหมดเลือก
+ */
+export function transactionRow(app, tx, {
+  showDate = false, compact = false, selectable = false, selected = false, onToggle = null,
+} = {}) {
   const isIncome = tx.kind === 'income';
   const sign = isIncome ? '+' : '−';
 
-  return el('li', { class: `tx-row tx-${isIncome ? 'income' : 'expense'}` },
+  const classes = ['tx-row', `tx-${isIncome ? 'income' : 'expense'}`];
+  if (compact) classes.push('tx-row-compact');
+  if (selectable && selected) classes.push('tx-row-selected');
+
+  return el('li', { class: classes.join(' ') },
     el('button', {
       class: 'tx-button', type: 'button',
-      onclick: () => openRowActions(app, tx),
+      // ในโหมดเลือก การแตะคือการติ๊ก ไม่ใช่การเปิดหน้าแก้ไข
+      'aria-pressed': selectable ? String(selected) : null,
+      onclick: () => (selectable ? onToggle?.(tx) : openRowActions(app, tx)),
     },
+      selectable
+        ? el('span', {
+            class: `tx-check ${selected ? 'tx-check-on' : ''}`, 'aria-hidden': 'true',
+          }, selected ? '✓' : '')
+        : null,
       el('span', { class: 'tx-main' },
         el('span', { class: 'tx-name' }, tx.name),
         el('span', { class: 'tx-meta' },

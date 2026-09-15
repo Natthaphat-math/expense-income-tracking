@@ -20,11 +20,11 @@ export function renderLog(app, options = {}) {
     kind: editing?.kind ?? options.kind ?? 'expense',
     text: editing ? editing.name : '',
     // ช่องที่ผู้ใช้แตะเอง — ตัวแปลงข้อความจะไม่เขียนทับ
-    touched: new Set(editing ? ['amount', 'type', 'group', 'date'] : []),
+    touched: new Set(editing ? ['amount', 'type', 'group', 'date'] : (options.date ? ['date'] : [])),
     amount: editing?.amount ?? null,
     type: editing?.type ?? null,
     group: editing?.group ?? defaultGroupFor(editing?.kind ?? options.kind ?? 'expense'),
-    date: editing?.date ?? todayISO(),
+    date: editing?.date ?? options.date ?? todayISO(),
     parsed: null,
     batch: null,
     dirty: false,

@@ -116,7 +116,7 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
 .btn-icon-placeholder { display: inline-block; min-width: var(--tap); }
 
 .chip {
-  min-height: 38px;
+  min-height: var(--tap);
   padding: 7px 14px;
   border-radius: 999px;
   background: var(--surface);
@@ -128,7 +128,7 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
 .chip-on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .chip-warn { border-color: var(--warn); color: var(--warn); background: #fdf6e9; }
 .chip-suggest { border-color: var(--accent); color: var(--accent); background: #eef3fa; }
-.chip-dismiss { min-width: 38px; padding: 7px 10px; }
+.chip-dismiss { min-width: var(--tap); padding: 7px 10px; }
 .chip-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .chip-host:not(:empty) { margin-top: 12px; }
 
@@ -143,7 +143,7 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
 .seg-full { width: 100%; }
 .seg-item {
   flex: 1 1 auto;
-  min-height: 40px;
+  min-height: var(--tap);
   padding: 8px 12px;
   border-radius: 9px;
   font-size: 15px;
@@ -839,3 +839,116 @@ p.sync-error {
 }
 .note-box strong { display: block; color: var(--ink); margin-bottom: 6px; }
 .note-box p + p { margin-top: 8px; }
+
+/* ------------------------------------------------ รายการแบบแน่น (หน้าเดือน) */
+/* เตี้ยลงเพื่อให้เห็นรายการต่อหน้าจอมากขึ้น แต่ยังไม่ต่ำกว่า 44pt ตามเกณฑ์ปุ่ม */
+.tx-row-compact .tx-button {
+  min-height: var(--tap);
+  padding: 5px 12px;
+  gap: 10px;
+}
+.tx-row-compact .tx-main { gap: 0; }
+.tx-row-compact .tx-name { font-size: 15px; line-height: 1.25; }
+.tx-row-compact .tx-meta { font-size: 12px; line-height: 1.25; gap: 6px; }
+.tx-row-compact .tx-kind-tag { padding: 0 6px; font-size: 11.5px; }
+.tx-row-compact .tx-amount { font-size: 15.5px; }
+.tx-row-compact .tx-amount-missing { font-size: 11.5px; padding: 2px 7px; }
+.day-groups .tx-list { gap: 5px; }
+.day-group { margin-bottom: 4px; }
+
+/* -------------------------------------------------------- เลือกหลายรายการ */
+.list-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+.tx-check {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  border: 2px solid var(--line);
+  background: var(--surface);
+  font-size: 14px;
+  font-weight: 700;
+  color: transparent;
+}
+.tx-check-on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tx-row-selected { box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
+
+.day-pick {
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  margin-left: -8px;
+  border-radius: 8px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  text-align: left;
+}
+.day-pick-on { color: var(--accent); }
+.day-pick:active { background: var(--surface-sunk); }
+
+/* แถบล่างของโหมดเลือก — ติดขอบล่างการ์ด และอยู่เหนือ home indicator */
+.select-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px -16px -16px;
+  padding: 10px 16px;
+  padding-bottom: calc(10px + var(--safe-bottom));
+  background: rgba(247, 245, 240, .96);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--line);
+}
+.select-count {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  text-align: center;
+}
+.select-bar .btn[disabled] { opacity: .45; }
+
+/* ------------------------------------------------------ วันที่ยังไม่บันทึก */
+.day-group-empty { margin-bottom: 4px; }
+.day-empty-row {
+  width: 100%;
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 2px;
+  border-bottom: 1px dashed var(--line);
+  text-align: left;
+}
+.day-empty-row:active { background: var(--surface-sunk); }
+.day-name-empty { font-size: 14.5px; font-weight: 500; color: var(--ink-faint); }
+.day-empty-hint {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  opacity: .85;
+}
+.day-empty-row:active .day-empty-hint { color: var(--accent); }
+
+/* แถวสรุปช่วงวันที่ยังไม่ได้บันทึกหลายวันติดกัน */
+.day-empty-run {
+  border-bottom-style: solid;
+  border-color: var(--line);
+}
+.day-empty-run .day-empty-hint {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--surface-sunk);
+  opacity: 1;
+}
