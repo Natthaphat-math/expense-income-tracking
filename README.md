@@ -212,6 +212,9 @@ saveSettings(s)     // Promise<Settings>
 ขั้นตอนตั้งค่าใน Firebase Console ทั้งหมดอยู่ใน
 [`docs/firebase-setup.md`](docs/firebase-setup.md)
 
+กำลังจะทำเป็นแอป iOS (EZ Expense) — สิ่งที่ต้องรู้ก่อนเริ่มเขียนใหม่อยู่ใน
+[`docs/ios-handover.md`](docs/ios-handover.md)
+
 สรุปสิ่งที่ห้ามลืม
 
 - จำกัดสิทธิ์ใน **Firestore Security Rules** ไม่ใช่แค่ในโค้ดฝั่งเว็บ
