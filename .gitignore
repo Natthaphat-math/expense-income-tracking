@@ -23,3 +23,6 @@ Thumbs.db
 __pycache__/
 *.pyc
 node_modules/
+
+# พรีวิวที่ build แล้ว — ห้าม commit และห้ามวางบน Pages (origin เดียวกับแอปจริง)
+dist/

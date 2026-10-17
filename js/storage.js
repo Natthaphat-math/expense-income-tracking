@@ -28,10 +28,43 @@ export class StorageError extends Error {
   }
 }
 
+/**
+ * localStorage ที่ใช้ได้จริง หรือที่เก็บชั่วคราวในหน่วยความจำถ้าเครื่องไม่ยอม
+ * (Safari โหมดส่วนตัว หรือหน้าที่ถูกฝังในกรอบที่ปิดการเก็บข้อมูล — แค่แตะ
+ * globalThis.localStorage ก็ throw ได้ แอปต้องยังเปิดขึ้นและใช้งานได้)
+ */
+export function safeLocalStorage() {
+  try {
+    const store = globalThis.localStorage;
+    const probe = '__tet_probe__';
+    store.setItem(probe, '1');
+    store.removeItem(probe);
+    return store;
+  } catch {
+    console.warn('เก็บข้อมูลลงเครื่องไม่ได้ — ข้อมูลจะหายเมื่อปิดแอป');
+    return memoryStorage();
+  }
+}
+
+function memoryStorage() {
+  const map = new Map();
+  return {
+    getItem: (k) => (map.has(k) ? map.get(k) : null),
+    setItem: (k, v) => { map.set(k, String(v)); },
+    removeItem: (k) => { map.delete(k); },
+    isMemoryOnly: true,
+  };
+}
+
 export class LocalStorageAdapter {
-  constructor(store = globalThis.localStorage) {
+  constructor(store = safeLocalStorage()) {
     this.store = store;
     this._cache = null;
+  }
+
+  /** true เมื่อข้อมูลอยู่แค่ในหน่วยความจำ ปิดแอปแล้วหาย */
+  get isMemoryOnly() {
+    return this.store?.isMemoryOnly === true;
   }
 
   _read(key, fallback) {

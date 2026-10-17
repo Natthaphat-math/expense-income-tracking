@@ -1,39 +1,129 @@
 // กราฟวาดด้วย inline SVG ล้วน ๆ ไม่มี dependency ภายนอก จึงใช้งานออฟไลน์ได้
 // ทุกข้อความใส่ผ่าน textContent (svgEl) จึงไม่มีทางแทรก HTML ได้
+//
+// กราฟแท่งและกราฟเส้นวาดตามความกว้างจริงของจอ (1 หน่วย SVG = 1 px)
+// เดิมใช้ viewBox กว้าง 720 แล้วย่อลงจอ ทำให้ตัวหนังสือบนแกนเหลือแค่ 6px บน iPhone
 
-import { svgEl, el } from './dom.js';
+import { svgEl, el, replace } from './dom.js';
 import { formatMoney, formatNumber } from './format.js';
+import { UNCATEGORISED } from './model.js';
 
-/** จานสีสงบตา ไล่โทนอุ่น-เย็นสลับกัน เพื่อให้ชิ้นติดกันต่างกันชัด */
-export const PALETTE = [
-  '#5b8c7e', '#c98a5b', '#7a8fbf', '#c26d6d', '#9b8bbd',
-  '#589a9a', '#b8894f', '#6f9e6f', '#bf7fa3', '#8a8f6b',
-  '#4f7fa8', '#a97b8c', '#75937d', '#c1996b', '#8092a8',
-];
+/**
+ * จานสีสำหรับแยกประเภท — ลำดับนี้ผ่านการตรวจด้วย validate_palette ครบทุกขนาดวง
+ * (2–7 ชิ้น รวมคู่ที่วนจากชิ้นสุดท้ายกลับมาชิ้นแรก) ทั้งความต่างของสีสำหรับคนตาบอดสี
+ * และสายตาปกติ ห้ามสลับลำดับหรือเติมสีเองโดยไม่ตรวจซ้ำ
+ * ค่าจริงอยู่ใน styles.css (--series-1 ถึง --series-7) เพื่อให้สลับโหมดมืดได้ในที่เดียว
+ */
+export const SERIES_COUNT = 7;
+const seriesVar = (slot) => `var(--series-${slot + 1})`;
 
-export function colorFor(index) {
-  return PALETTE[index % PALETTE.length];
-}
-
-const NS = 'http://www.w3.org/2000/svg';
-
-function makeSvg(width, height, extra = {}) {
-  return svgEl('svg', {
-    viewBox: `0 0 ${width} ${height}`,
-    width: '100%',
-    height: '100%',
-    preserveAspectRatio: 'xMidYMid meet',
-    role: 'img',
-    ...extra,
-  });
-}
+const AXIS_FONT_PX = 12;
+const AXIS_FONT_MIN_PX = 11;
 
 function emptyChart(message) {
   return el('div', { class: 'chart-empty' }, message);
 }
 
+function percent(fraction) {
+  return `${(fraction * 100).toFixed(fraction < 0.1 ? 1 : 0)}%`;
+}
+
+// ───────────────────────────────────────────────────────── เครื่องมือร่วม
+
+/** วาดใหม่ทุกครั้งที่ความกว้างของกล่องเปลี่ยน */
+function responsive(container, draw) {
+  let lastWidth = 0;
+  const render = (width) => {
+    const w = Math.floor(width);
+    if (w <= 0 || w === lastWidth) return;
+    lastWidth = w;
+    replace(container, draw(w));
+  };
+  if (typeof ResizeObserver === 'function') {
+    const observer = new ResizeObserver((entries) => {
+      // กล่องถูกถอดออกจากหน้าแล้ว (เปลี่ยนหน้า) — เลิกติดตาม
+      if (!container.isConnected) {
+        observer.disconnect();
+        return;
+      }
+      render(entries[0].contentRect.width);
+    });
+    observer.observe(container);
+  } else {
+    requestAnimationFrame(() => render(container.clientWidth || 320));
+  }
+}
+
+let measureCtx = null;
+/** วัดความกว้างตัวหนังสือจริง เพื่อวางป้ายโดยไม่ทับกัน */
+function textWidth(text, sizePx) {
+  if (!measureCtx) {
+    measureCtx = document.createElement('canvas').getContext('2d');
+  }
+  if (!measureCtx) return String(text).length * sizePx * 0.6;
+  const family = getComputedStyle(document.body).fontFamily || 'system-ui';
+  measureCtx.font = `${sizePx}px ${family}`;
+  return measureCtx.measureText(String(text)).width;
+}
+
+const COMPACT = new Intl.NumberFormat('th-TH', { notation: 'compact', maximumFractionDigits: 1 });
+/** ป้ายแกน: ตั้งแต่ 1,000 ขึ้นไปย่อเป็น 1K 2.5K 20K */
+function tickLabel(value) {
+  return Math.abs(value) >= 1000 ? COMPACT.format(value) : formatNumber(value);
+}
+
+/** ช่วงแกนตัวเลขกลม ๆ (1 / 2 / 2.5 / 5 × 10ⁿ) ประมาณ `count` ช่อง */
+function niceScale(min, max, count = 3) {
+  if (max === min) max = min + 1;
+  const raw = (max - min) / count;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw);
+  const lo = Math.floor(min / step) * step;
+  const hi = Math.ceil(max / step) * step;
+  const ticks = [];
+  for (let v = lo; v <= hi + step / 2; v += step) ticks.push(Math.round(v * 100) / 100);
+  return { lo, hi, ticks };
+}
+
+/** แท่งมุมมนเฉพาะปลาย ฐานติดเส้นศูนย์เป็นมุมฉาก */
+function barPath(x, y, w, h, r) {
+  const rr = Math.max(0, Math.min(r, w / 2, h));
+  return [
+    `M ${x} ${y + h}`,
+    `L ${x} ${y + rr}`,
+    `Q ${x} ${y} ${x + rr} ${y}`,
+    `L ${x + w - rr} ${y}`,
+    `Q ${x + w} ${y} ${x + w} ${y + rr}`,
+    `L ${x + w} ${y + h}`,
+    'Z',
+  ].join(' ');
+}
+
+/** ขนาดตัวหนังสือแกน x ที่ใส่ลงช่องได้ และควรแสดงทุกป้ายหรือเว้นป้าย */
+function fitLabels(labels, slotWidth) {
+  for (const size of [AXIS_FONT_PX, AXIS_FONT_MIN_PX]) {
+    const widest = Math.max(...labels.map((l) => textWidth(l, size)));
+    if (widest <= slotWidth - 2) return { size, every: 1 };
+  }
+  const widest = Math.max(...labels.map((l) => textWidth(l, AXIS_FONT_MIN_PX)));
+  return { size: AXIS_FONT_MIN_PX, every: Math.ceil((widest + 4) / slotWidth) };
+}
+
+function legendChip(label, swatch) {
+  return el('span', { class: 'legend-item' },
+    el('span', { class: 'legend-dot', style: { background: swatch } }),
+    el('span', { class: 'legend-name' }, label),
+  );
+}
+
+// ─────────────────────────────────────────────────────────── กราฟโดนัท
+
+let patternId = 0;
+
 /**
- * กราฟโดนัท แบ่งตามประเภท พร้อมคำอธิบายด้านข้าง
+ * กราฟโดนัทแบ่งตามประเภท พร้อมคำอธิบายด้านข้าง
+ * "ไม่ระบุประเภท" เป็นสีเทาลายเส้นทแยง และ "อื่น ๆ" เป็นสีเทาเรียบ
+ * ทั้งสองไม่กินช่องสีของประเภทจริง
  * @param {Array<{name:string, value:number}>} data
  */
 export function donutChart(data, { title = '', onSlice = null, centerLabel = '', maxSlices = 8 } = {}) {
@@ -52,6 +142,18 @@ export function donutChart(data, { title = '', onSlice = null, centerLabel = '',
       ]
     : all;
 
+  // ช่องสีแจกตามลำดับให้เฉพาะประเภทจริง เทาไม่นับเป็นช่อง
+  let slot = 0;
+  const hatchId = `donut-none-${++patternId}`;
+  for (const row of rows) {
+    if (row.name === UNCATEGORISED) row.swatch = { fill: `url(#${hatchId})`, css: 'none' };
+    else if (row.rollup) row.swatch = { fill: 'var(--chart-other)', css: 'other' };
+    else {
+      row.swatch = { fill: seriesVar(slot), css: seriesVar(slot) };
+      slot = Math.min(slot + 1, SERIES_COUNT - 1);
+    }
+  }
+
   const total = rows.reduce((sum, d) => sum + d.value, 0);
   const size = 220;
   const cx = size / 2;
@@ -59,25 +161,34 @@ export function donutChart(data, { title = '', onSlice = null, centerLabel = '',
   const outer = 96;
   const inner = 58;
 
-  const svg = makeSvg(size, size, { 'aria-label': title || 'สัดส่วนตามประเภท' });
-  let angle = -Math.PI / 2;
+  const svg = svgEl('svg', {
+    viewBox: `0 0 ${size} ${size}`, width: '100%', height: '100%',
+    preserveAspectRatio: 'xMidYMid meet', role: 'img', 'aria-label': title || 'สัดส่วนตามประเภท',
+  });
 
-  rows.forEach((row, index) => {
+  // ลายเส้นทแยงสำหรับ "ไม่ระบุประเภท" — สื่อว่ายังทำไม่เสร็จ และแยกจาก "อื่น ๆ" ได้โดยไม่ต้องพึ่งสี
+  svg.appendChild(svgEl('defs', {},
+    svgEl('pattern', { id: hatchId, width: 6, height: 6, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' },
+      svgEl('rect', { width: 6, height: 6, class: 'hatch-base' }),
+      svgEl('rect', { width: 2.5, height: 6, class: 'hatch-line' }),
+    ),
+  ));
+
+  let angle = -Math.PI / 2;
+  for (const row of rows) {
     const fraction = row.value / total;
     const sweep = fraction * Math.PI * 2;
-    const color = colorFor(index);
 
     // วงกลมเต็มวงวาดด้วย path ไม่ได้ ต้องใช้ ring สองวง
     const node = fraction > 0.9999
       ? svgEl('circle', {
-          cx, cy, r: (outer + inner) / 2,
-          fill: 'none',
-          stroke: color,
-          'stroke-width': outer - inner,
+          cx, cy, r: (outer + inner) / 2, fill: 'none',
+          style: `stroke: ${row.swatch.fill}; stroke-width: ${outer - inner}px`,
         })
       : svgEl('path', {
           d: donutSlicePath(cx, cy, inner, outer, angle, angle + sweep),
-          fill: color,
+          class: 'donut-slice',
+          style: `fill: ${row.swatch.fill}`,
         });
 
     const detail = row.rollup
@@ -87,12 +198,12 @@ export function donutChart(data, { title = '', onSlice = null, centerLabel = '',
       text: `${row.name} ${formatMoney(row.value)} (${percent(fraction)})${detail ? `\n${detail}` : ''}`,
     }));
     if (onSlice && !row.rollup) {
-      node.setAttribute('class', 'slice-tappable');
+      node.classList.add('slice-tappable');
       node.addEventListener('click', () => onSlice(row));
     }
     svg.appendChild(node);
     angle += sweep;
-  });
+  }
 
   svg.appendChild(svgEl('text', {
     x: cx, y: cy - 6, 'text-anchor': 'middle', class: 'donut-total', text: formatNumber(total),
@@ -102,8 +213,11 @@ export function donutChart(data, { title = '', onSlice = null, centerLabel = '',
   }));
 
   const legend = el('ul', { class: 'legend' },
-    rows.map((row, index) => el('li', { class: 'legend-item' },
-      el('span', { class: 'legend-dot', style: { background: colorFor(index) } }),
+    rows.map((row) => el('li', { class: 'legend-item' },
+      el('span', {
+        class: `legend-dot ${row.swatch.css === 'none' ? 'legend-dot-none' : ''} ${row.swatch.css === 'other' ? 'legend-dot-other' : ''}`,
+        style: row.swatch.css.startsWith('var(') ? { background: row.swatch.css } : null,
+      }),
       el('span', { class: 'legend-name' }, row.name),
       el('span', { class: 'legend-value' }, `${formatNumber(row.value)} (${percent(row.value / total)})`),
     )));
@@ -112,10 +226,6 @@ export function donutChart(data, { title = '', onSlice = null, centerLabel = '',
     el('div', { class: 'chart-canvas donut-canvas' }, svg),
     legend,
   );
-}
-
-function percent(fraction) {
-  return `${(fraction * 100).toFixed(fraction < 0.1 ? 1 : 0)}%`;
 }
 
 function donutSlicePath(cx, cy, inner, outer, start, end) {
@@ -134,93 +244,22 @@ function donutSlicePath(cx, cy, inner, outer, start, end) {
   ].join(' ');
 }
 
+// ────────────────────────────────────────────────────────── กราฟแท่งคู่
+
 /**
  * กราฟแท่งคู่ รายรับ vs รายจ่าย — ใช้ได้ทั้งรายเดือนและรายวัน
  * @param {Array<{key:string, label:string, income:number, expense:number}>} items
  * @param {object} options
  * @param {Function} options.onSelect  เรียกเมื่อแตะแท่งของรายการนั้น
  * @param {string} options.highlight   key ของรายการที่ต้องการเน้น
+ * @param {number} options.height      ความสูงเป็น px
  */
-export function groupedBarChart(items, { onSelect = null, highlight = null } = {}) {
-  const max = Math.max(1, ...items.map((m) => Math.max(m.income, m.expense)));
-  const width = 720;
-  const height = 260;
-  const padLeft = 54;
-  const padRight = 12;
-  const padTop = 16;
-  const padBottom = 40;
-  const plotW = width - padLeft - padRight;
-  const plotH = height - padTop - padBottom;
-  const slot = plotW / items.length;
-  const barW = Math.min(16, slot / 2.8);
-  const gap = 3;
-
-  const svg = makeSvg(width, height, { 'aria-label': 'รายรับและรายจ่ายรายเดือน' });
-
-  // เส้นแนวนอนและป้ายแกน — ข้ามป้ายที่ค่าซ้ำกับเส้นก่อนหน้า
-  // (ถ้าไม่ข้าม เดือนที่ยังไม่มีข้อมูลจะโชว์ "1 1 1 0 0" เพราะปัดเลขชนกัน)
-  let lastLabel = null;
-  for (const t of [0, 0.25, 0.5, 0.75, 1]) {
-    const y = padTop + plotH * (1 - t);
-    svg.appendChild(svgEl('line', {
-      x1: padLeft, y1: y, x2: width - padRight, y2: y, class: 'grid-line',
-    }));
-    const label = formatNumber(Math.round(max * t));
-    if (label !== lastLabel) {
-      svg.appendChild(svgEl('text', {
-        x: padLeft - 8, y: y + 4, 'text-anchor': 'end', class: 'axis-label', text: label,
-      }));
-      lastLabel = label;
-    }
-  }
-
-  items.forEach((m, index) => {
-    const x = padLeft + slot * index + slot / 2;
-    const isHot = highlight !== null && highlight === m.key;
-
-    if (onSelect) {
-      const hit = svgEl('rect', {
-        x: padLeft + slot * index, y: padTop, width: slot, height: plotH,
-        fill: 'transparent', class: 'bar-hit',
-      });
-      hit.appendChild(svgEl('title', {
-        text: `${m.label} — รายรับ ${formatMoney(m.income)}, รายจ่าย ${formatMoney(m.expense)}`,
-      }));
-      hit.addEventListener('click', () => onSelect(m));
-      svg.appendChild(hit);
-    }
-
-    if (isHot) {
-      svg.appendChild(svgEl('rect', {
-        x: padLeft + slot * index + 1, y: padTop, width: slot - 2, height: plotH,
-        class: 'bar-highlight', rx: 6,
-      }));
-    }
-
-    const bars = [
-      { value: m.income, color: 'var(--income)', offset: -(barW + gap) / 2 - barW / 2 + barW / 2 - gap / 2 },
-      { value: m.expense, color: 'var(--expense)', offset: gap / 2 },
-    ];
-    bars[0].offset = -barW - gap / 2;
-
-    for (const bar of bars) {
-      const h = (bar.value / max) * plotH;
-      if (h <= 0) continue;
-      svg.appendChild(svgEl('rect', {
-        x: x + bar.offset, y: padTop + plotH - h, width: barW, height: Math.max(h, 1.5),
-        fill: bar.color, rx: 3, 'pointer-events': 'none',
-      }));
-    }
-
-    svg.appendChild(svgEl('text', {
-      x, y: height - padBottom + 18, 'text-anchor': 'middle',
-      class: isHot ? 'axis-label axis-label-strong' : 'axis-label',
-      text: m.label, 'pointer-events': 'none',
-    }));
-  });
+export function groupedBarChart(items, { onSelect = null, highlight = null, height = 190 } = {}) {
+  const canvas = el('div', { class: 'chart-canvas' });
+  responsive(canvas, (width) => drawBars(width, height, items, { onSelect, highlight }));
 
   return el('div', { class: 'chart chart-bars' },
-    el('div', { class: 'chart-canvas' }, svg),
+    canvas,
     el('div', { class: 'legend legend-inline' },
       legendChip('รายรับ', 'var(--income)'),
       legendChip('รายจ่าย', 'var(--expense)'),
@@ -228,88 +267,156 @@ export function groupedBarChart(items, { onSelect = null, highlight = null } = {
   );
 }
 
-function legendChip(label, color) {
-  return el('span', { class: 'legend-item' },
-    el('span', { class: 'legend-dot', style: { background: color } }),
-    el('span', { class: 'legend-name' }, label),
-  );
+function drawBars(width, height, items, { onSelect, highlight }) {
+  const max = Math.max(0, ...items.map((m) => Math.max(m.income, m.expense)));
+  const { hi, ticks } = niceScale(0, max || 1, 3);
+  const tickTexts = ticks.map(tickLabel);
+  const padLeft = Math.ceil(Math.max(...tickTexts.map((t) => textWidth(t, AXIS_FONT_PX)))) + 10;
+  const padRight = 4;
+  const padTop = 8;
+  const padBottom = 24;
+  const plotW = Math.max(10, width - padLeft - padRight);
+  const plotH = height - padTop - padBottom;
+  const slot = plotW / items.length;
+  const gap = 2;
+  const barW = Math.max(3, Math.min(14, (slot - 8 - gap) / 2));
+  const y = (v) => padTop + plotH * (1 - v / hi);
+
+  const svg = svgEl('svg', {
+    width, height, viewBox: `0 0 ${width} ${height}`, role: 'img',
+    'aria-label': 'รายรับและรายจ่าย', class: 'chart-svg',
+  });
+
+  ticks.forEach((t, i) => {
+    svg.appendChild(svgEl('line', { x1: padLeft, y1: y(t), x2: width - padRight, y2: y(t), class: 'grid-line' }));
+    svg.appendChild(svgEl('text', {
+      x: padLeft - 6, y: y(t) + 4, 'text-anchor': 'end', class: 'axis-label', text: tickTexts[i],
+    }));
+  });
+
+  const fit = fitLabels(items.map((m) => m.label), slot);
+
+  items.forEach((m, index) => {
+    const x0 = padLeft + slot * index;
+    const cxSlot = x0 + slot / 2;
+    const isHot = highlight !== null && highlight === m.key;
+
+    if (isHot) {
+      svg.appendChild(svgEl('rect', {
+        x: x0 + 1, y: padTop, width: slot - 2, height: plotH, rx: 6, class: 'bar-highlight',
+      }));
+    }
+
+    for (const [value, kind, dx] of [[m.income, 'income', -gap / 2 - barW], [m.expense, 'expense', gap / 2]]) {
+      const h = (value / hi) * plotH;
+      if (h <= 0) continue;
+      const hh = Math.max(h, 1.5);
+      svg.appendChild(svgEl('path', {
+        d: barPath(cxSlot + dx, padTop + plotH - hh, barW, hh, 4),
+        class: `bar bar-${kind}`, 'pointer-events': 'none',
+      }));
+    }
+
+    if (index % fit.every === 0 || isHot) {
+      svg.appendChild(svgEl('text', {
+        x: cxSlot, y: height - 7, 'text-anchor': 'middle',
+        class: isHot ? 'axis-label axis-label-strong' : 'axis-label',
+        style: `font-size: ${fit.size}px`, text: m.label, 'pointer-events': 'none',
+      }));
+    }
+
+    // พื้นที่แตะกว้างทั้งช่อง ใหญ่กว่าตัวแท่ง
+    if (onSelect) {
+      const hit = svgEl('rect', {
+        x: x0, y: 0, width: slot, height, fill: 'transparent', class: 'bar-hit',
+      });
+      hit.appendChild(svgEl('title', {
+        text: `${m.label} — รายรับ ${formatMoney(m.income)}, รายจ่าย ${formatMoney(m.expense)}`,
+      }));
+      hit.addEventListener('click', () => onSelect(m));
+      svg.appendChild(hit);
+    }
+  });
+
+  return svg;
 }
+
+// ──────────────────────────────────────────────────────────── กราฟเส้น
 
 /**
  * กราฟเส้นยอดคงเหลือรายวัน
- * @param {Array<{day:number, balance:number}>} points
+ * @param {Array<{day:number, balance:number, hasActivity?:boolean}>} points
  */
-export function lineChart(points, { label = 'ยอดคงเหลือรายวัน' } = {}) {
+export function lineChart(points, { label = 'ยอดคงเหลือรายวัน', height = 180 } = {}) {
   if (points.length === 0) return emptyChart('ยังไม่มีข้อมูลสำหรับเดือนนี้');
+  const canvas = el('div', { class: 'chart-canvas' });
+  responsive(canvas, (width) => drawLine(width, height, points, label));
+  return el('div', { class: 'chart chart-line' }, canvas);
+}
 
-  const width = 720;
-  const height = 210;
-  const padLeft = 58;
-  const padRight = 14;
-  const padTop = 14;
-  const padBottom = 28;
-  const plotW = width - padLeft - padRight;
+function drawLine(width, height, points, label) {
+  const values = points.map((p) => p.balance);
+  const { lo, hi, ticks } = niceScale(Math.min(0, ...values), Math.max(0, ...values), 3);
+  const tickTexts = ticks.map(tickLabel);
+  const padLeft = Math.ceil(Math.max(...tickTexts.map((t) => textWidth(t, AXIS_FONT_PX)))) + 10;
+  const padRight = 8;
+  const padTop = 10;
+  const padBottom = 24;
+  const plotW = Math.max(10, width - padLeft - padRight);
   const plotH = height - padTop - padBottom;
 
-  const values = points.map((p) => p.balance);
-  let min = Math.min(0, ...values);
-  let max = Math.max(0, ...values);
-  if (max === min) max = min + 1;
-  const pad = (max - min) * 0.08;
-  min -= pad;
-  max += pad;
+  const first = points[0].day;
+  const last = points[points.length - 1].day;
+  const x = (day) => padLeft + (plotW * (day - first)) / Math.max(1, last - first);
+  const y = (v) => padTop + plotH * (1 - (v - lo) / (hi - lo));
 
-  const x = (day) => padLeft + (plotW * (day - points[0].day)) / Math.max(1, points[points.length - 1].day - points[0].day);
-  const y = (value) => padTop + plotH * (1 - (value - min) / (max - min));
+  const svg = svgEl('svg', {
+    width, height, viewBox: `0 0 ${width} ${height}`, role: 'img', 'aria-label': label, class: 'chart-svg',
+  });
 
-  const svg = makeSvg(width, height, { 'aria-label': label });
-
-  for (const t of [0, 0.5, 1]) {
-    const value = min + (max - min) * t;
-    const yy = y(value);
-    svg.appendChild(svgEl('line', { x1: padLeft, y1: yy, x2: width - padRight, y2: yy, class: 'grid-line' }));
-    svg.appendChild(svgEl('text', {
-      x: padLeft - 8, y: yy + 4, 'text-anchor': 'end', class: 'axis-label', text: formatNumber(Math.round(value)),
-    }));
-  }
-
-  // เส้นศูนย์ ถ้ายอดเคยติดลบ
-  if (min < 0 && max > 0) {
+  ticks.forEach((t, i) => {
     svg.appendChild(svgEl('line', {
-      x1: padLeft, y1: y(0), x2: width - padRight, y2: y(0), class: 'zero-line',
+      x1: padLeft, y1: y(t), x2: width - padRight, y2: y(t), class: t === 0 && lo < 0 ? 'zero-line' : 'grid-line',
     }));
-  }
+    svg.appendChild(svgEl('text', {
+      x: padLeft - 6, y: y(t) + 4, 'text-anchor': 'end', class: 'axis-label', text: tickTexts[i],
+    }));
+  });
 
-  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(p.day).toFixed(2)} ${y(p.balance).toFixed(2)}`).join(' ');
-  const area = `${path} L ${x(points[points.length - 1].day).toFixed(2)} ${y(Math.max(min, 0)).toFixed(2)} L ${x(points[0].day).toFixed(2)} ${y(Math.max(min, 0)).toFixed(2)} Z`;
-
-  svg.appendChild(svgEl('path', { d: area, class: 'line-area' }));
+  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(p.day).toFixed(1)} ${y(p.balance).toFixed(1)}`).join(' ');
+  const base = y(Math.max(lo, 0));
+  svg.appendChild(svgEl('path', {
+    d: `${path} L ${x(last).toFixed(1)} ${base.toFixed(1)} L ${x(first).toFixed(1)} ${base.toFixed(1)} Z`,
+    class: 'line-area',
+  }));
   svg.appendChild(svgEl('path', { d: path, class: 'line-stroke' }));
 
-  // จุดบนเส้น เฉพาะวันที่มีรายการ เพื่อไม่ให้รก
+  // จุดเฉพาะวันที่มีรายการ เพื่อไม่ให้รก
   for (const p of points) {
     if (!p.hasActivity) continue;
-    const dot = svgEl('circle', { cx: x(p.day), cy: y(p.balance), r: 3.5, class: 'line-dot' });
+    const dot = svgEl('circle', { cx: x(p.day), cy: y(p.balance), r: 4, class: 'line-dot' });
     dot.appendChild(svgEl('title', { text: `วันที่ ${p.day} — ${formatMoney(p.balance)}` }));
     svg.appendChild(dot);
   }
 
-  for (const day of axisDays(points)) {
+  // ป้ายวันที่: วันแรก วันสุดท้าย และทุก 5 วัน — ข้ามป้ายที่จะชนกัน
+  const days = new Set([first, last]);
+  for (let d = Math.ceil(first / 5) * 5; d < last; d += 5) days.add(d);
+  let lastRight = -Infinity;
+  for (const d of [...days].sort((a, b) => a - b)) {
+    const w = textWidth(String(d), AXIS_FONT_PX);
+    const cxLabel = x(d);
+    if (cxLabel - w / 2 < lastRight + 6 && d !== last) continue;
+    lastRight = cxLabel + w / 2;
     svg.appendChild(svgEl('text', {
-      x: x(day), y: height - 8, 'text-anchor': 'middle', class: 'axis-label', text: String(day),
+      x: cxLabel, y: height - 7, 'text-anchor': 'middle', class: 'axis-label', text: String(d),
     }));
   }
 
-  return el('div', { class: 'chart chart-line' }, el('div', { class: 'chart-canvas' }, svg));
+  return svg;
 }
 
-function axisDays(points) {
-  const first = points[0].day;
-  const last = points[points.length - 1].day;
-  const days = new Set([first, last]);
-  for (let d = Math.ceil(first / 5) * 5; d < last; d += 5) days.add(d);
-  return [...days].sort((a, b) => a - b);
-}
+// ───────────────────────────────────────────────────────── แถบความคืบหน้า
 
 /** แถบความคืบหน้าของงบ — คุมค่าให้อยู่ใน 0..1 และเปลี่ยนสีเมื่อเกินงบ */
 export function progressBar(actual, budget) {

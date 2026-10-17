@@ -1,6 +1,7 @@
 {
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.2",
+    "esbuild": "^0.24.0",
     "firebase": "^12.19.0"
   },
   "name": "expense-income-tracking",
@@ -11,6 +12,7 @@
   "scripts": {
     "test": "node --test \"test/parser.test.mjs\" \"test/backup.test.mjs\"",
     "test:rules": "firebase emulators:exec --only firestore --project demo-test \"node --test test/firestore-rules.test.mjs\"",
-    "serve": "python3 -m http.server 8000"
+    "serve": "python3 -m http.server 8000",
+    "preview": "node tools/build-preview.mjs"
   }
 }

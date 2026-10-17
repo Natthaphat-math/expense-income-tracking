@@ -15,6 +15,27 @@ import { SyncManager } from './sync.js';
 import { SYNC_ENABLED } from './firebase-config.js';
 
 const BACKUP_REMINDER_DAYS = 14;
+const BACKUP_SNOOZE_DAYS = 7;
+const SNOOZE_KEY = 'tet:backup-snooze-until';
+
+/**
+ * การซ่อนคำเตือนเป็นเรื่องของเครื่องนี้ ไม่ต้องซิงก์ จึงเก็บใน localStorage
+ * ถ้าเครื่องไม่ยอมให้เก็บ (โหมดส่วนตัว ฯลฯ) ก็ยังซ่อนได้จนกว่าจะปิดแอป
+ */
+function backupSnoozed() {
+  try {
+    const until = Number(localStorage.getItem(SNOOZE_KEY));
+    return Number.isFinite(until) && until > Date.now();
+  } catch {
+    return false;
+  }
+}
+
+function snoozeBackup() {
+  try {
+    localStorage.setItem(SNOOZE_KEY, String(Date.now() + BACKUP_SNOOZE_DAYS * 86400000));
+  } catch { /* ซ่อนไว้แค่รอบนี้ */ }
+}
 
 /**
  * หน้าหลักของแอป
@@ -217,7 +238,7 @@ class App {
 
   /** แถบเตือนให้สำรองข้อมูล — ขึ้นเฉพาะตอนที่ห่างจากครั้งล่าสุดนานแล้ว */
   backupBanner() {
-    if (this.state.dismissedBackupBanner) return null;
+    if (this.state.dismissedBackupBanner || backupSnoozed()) return null;
     if (this.store.active.length === 0) return null;
 
     const last = this.store.settings.lastBackupAt;
@@ -229,7 +250,7 @@ class App {
       el('div', { class: 'banner-text' },
         el('strong', {}, 'ถึงเวลาสำรองข้อมูลแล้ว'),
         el('span', {}, days === null
-          ? 'ยังไม่เคยส่งออกไฟล์สำรองเลย'
+          ? 'ยังไม่เคยสำรองข้อมูล'
           : `ครั้งล่าสุดผ่านมา ${days} วัน`),
       ),
       el('div', { class: 'banner-actions' },
@@ -238,8 +259,14 @@ class App {
           onclick: () => this.go('settings'),
         }, 'สำรองเลย'),
         el('button', {
-          class: 'btn-icon', type: 'button', 'aria-label': 'ปิดคำเตือน',
-          onclick: () => { this.state.dismissedBackupBanner = true; this.render(); },
+          class: 'btn-icon', type: 'button', 'aria-label': `ซ่อนคำเตือน ${BACKUP_SNOOZE_DAYS} วัน`,
+          onclick: () => {
+            // เดิมกดปิดแล้วเปิดแอปใหม่ก็กลับมาทุกครั้ง — เก็บไว้ในเครื่องให้เงียบ 7 วันจริง
+            this.state.dismissedBackupBanner = true;
+            snoozeBackup();
+            this.render();
+            toast(`จะเตือนอีกครั้งใน ${BACKUP_SNOOZE_DAYS} วัน`);
+          },
         }, '✕'),
       ),
     );

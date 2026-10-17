@@ -6,17 +6,35 @@
   --surface: #ffffff;
   --surface-sunk: #f1eee7;
   --ink: #2f2c27;
-  --ink-soft: #6d675d;
-  --ink-faint: #9a948a;
+  /* ข้อความทุกระดับผ่าน 4.5:1 บนพื้นทุกแบบที่ใช้ (bg, surface, surface-sunk) */
+  --ink-soft: #59534a;   /* 6.6:1 */
+  --ink-faint: #6f6960;  /* 4.7:1 — เดิม #9a948a ได้แค่ 2.6:1 */
   --line: #e3ded4;
 
-  --income: #4b8b6f;
-  --income-soft: #e8f2ed;
-  --expense: #b5674f;
+  /* สีเหล่านี้ใช้ทั้งเป็นพื้นของปุ่ม (ตัวหนังสือขาว) และเป็นสีตัวหนังสือ
+     จึงต้องผ่าน 4.5:1 กับสีขาวและกับพื้นอ่อนของตัวเอง
+     รายรับ/รายจ่ายเป็นคู่ที่แยกกันได้สำหรับคนตาบอดสีแดง-เขียว (ΔE 7.2)
+     โดยมีเครื่องหมาย +/− และคำว่า รับ/จ่าย กำกับเสมอ */
+  --income: #007e68;
+  --income-soft: #eafaf5;
+  --expense: #a1553e;
   --expense-soft: #f8ebe6;
-  --accent: #4a6fa5;
+  --accent: #496ea3;
   --danger: #b3453a;
-  --warn: #a8762a;
+  --warn: #976613;
+
+  /* สีของกราฟแยกประเภท — ลำดับผ่าน validate_palette ทุกขนาดวงโดนัท (2–7 ชิ้น)
+     ห้ามสลับลำดับโดยไม่ตรวจใหม่ ดู js/charts.js */
+  --series-1: #78569e;   /* plum */
+  --series-2: #d0774e;   /* terracotta */
+  --series-3: #119d9d;   /* teal */
+  --series-4: #b14e49;   /* brick */
+  --series-5: #d4ab4f;   /* ochre */
+  --series-6: #c26d90;   /* rose */
+  --series-7: #5b8940;   /* moss — ท้ายสุด เพราะเขียวในกราฟรายจ่ายชวนให้นึกว่าเป็นรายรับ */
+  --chart-other: #a19e99;      /* "อื่น ๆ" — เทาเรียบ */
+  --chart-none: #c1bdb8;       /* "ไม่ระบุประเภท" — เทาลายทแยง */
+  --chart-none-line: #83807b;
 
   --radius: 16px;
   --radius-sm: 10px;
@@ -424,23 +442,35 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
 
 .donut-total { font-size: 21px; font-weight: 700; fill: var(--ink); }
 .donut-caption { font-size: 12px; fill: var(--ink-faint); }
+/* เว้นช่อง 2px สีพื้นระหว่างชิ้น ให้ชิ้นที่สีใกล้กันยังแยกกันออก */
+.donut-slice { stroke: var(--surface); stroke-width: 2px; stroke-linejoin: round; }
+.hatch-base { fill: var(--chart-none); }
+.hatch-line { fill: var(--chart-none-line); }
 .slice-tappable { cursor: pointer; }
 .slice-tappable:active { opacity: .78; }
+.chart-svg { display: block; }
+.bar-income { fill: var(--income); }
+.bar-expense { fill: var(--expense); }
 
 .grid-line { stroke: var(--line); stroke-width: 1; }
 .zero-line { stroke: var(--ink-faint); stroke-width: 1; stroke-dasharray: 3 3; }
-.axis-label { font-size: 11px; fill: var(--ink-faint); }
+.axis-label { font-size: 12px; fill: var(--ink-faint); font-variant-numeric: tabular-nums; }
 .axis-label-strong { fill: var(--ink); font-weight: 700; }
 .bar-hit { cursor: pointer; }
 .bar-highlight { fill: var(--surface-sunk); }
 .line-stroke { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-.line-area { fill: rgba(74, 111, 165, .12); stroke: none; }
+.line-area { fill: var(--accent); fill-opacity: .1; stroke: none; }
 .line-dot { fill: var(--accent); }
 
 .legend { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
 .legend-inline { flex-direction: row; gap: 16px; justify-content: center; margin-top: 8px; }
 .legend-item { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .legend-dot { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+.legend-dot-other { background: var(--chart-other); }
+.legend-dot-none {
+  background: repeating-linear-gradient(45deg,
+    var(--chart-none-line) 0 2px, var(--chart-none) 2px 4.5px);
+}
 .legend-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .legend-value { color: var(--ink-soft); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
@@ -482,7 +512,7 @@ button { cursor: pointer; border: none; background: none; color: inherit; }
 .kind-expense { background: var(--expense); }
 .kind-income { background: var(--income); }
 .kind-label { font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
-.kind-hint { font-size: 13px; opacity: .82; }
+.kind-hint { font-size: 13px; }
 
 .field { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
 .field-label { font-size: 14.5px; font-weight: 600; color: var(--ink-soft); }
@@ -1085,3 +1115,13 @@ p.sync-error {
   color: var(--ink-soft);
   flex-wrap: wrap;
 }
+
+/* บรรทัดชวนตั้งค่า แทนส่วนที่ยังว่าง */
+.card-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 12px 12px 16px;
+}
+.note-line { font-size: 15px; color: var(--ink-soft); }

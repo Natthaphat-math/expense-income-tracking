@@ -173,12 +173,15 @@ export function summarize(transactions) {
   return { byGroup, income, expense, savings, net: income - expense };
 }
 
+/** ชื่อที่ใช้แทนรายการที่ยังไม่ได้เลือกประเภท — กราฟใช้ชื่อนี้แยกสีเป็นสีเทา */
+export const UNCATEGORISED = 'ไม่ระบุประเภท';
+
 /** ยอดรวมแยกตามประเภท เรียงจากมากไปน้อย */
 export function sumByType(transactions) {
   const map = new Map();
   for (const tx of transactions) {
     if (tx.deleted) continue;
-    const key = tx.type || 'ไม่ระบุประเภท';
+    const key = tx.type || UNCATEGORISED;
     map.set(key, (map.get(key) ?? 0) + (tx.amount ?? 0));
   }
   return [...map.entries()]

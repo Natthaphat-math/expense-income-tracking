@@ -361,4 +361,15 @@ export function promptText({ title, label, value = '', placeholder = '', hint = 
   });
 }
 
+/**
+ * การ์ดบรรทัดเดียวพร้อมปุ่ม — ใช้แทนส่วนที่ว่างเปล่าเพราะยังไม่ได้ตั้งค่า
+ * แทนที่จะโชว์แถบความคืบหน้าว่าง ๆ หลายแถบ
+ */
+export function notePrompt(message, actionLabel, onAction) {
+  return el('section', { class: 'card card-note' },
+    el('p', { class: 'note-line' }, message),
+    el('button', { class: 'btn btn-small', type: 'button', onclick: onAction }, actionLabel),
+  );
+}
+
 export { longDate, relativeDate };

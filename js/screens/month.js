@@ -7,10 +7,10 @@ import {
 } from '../format.js';
 import {
   summarize, sumByType, groupLabel, budgetFor, activeCategories,
-  BUDGET_GROUPS, targetWord, groupForCategory, groupKind, GROUPS,
+  BUDGET_GROUPS, targetWord, groupForCategory, groupKind, GROUPS, UNCATEGORISED,
 } from '../model.js';
 import { donutChart, lineChart, progressBar } from '../charts.js';
-import { openPicker, promptNumber, openSheet, toast, confirmDialog } from '../ui.js';
+import { openPicker, promptNumber, openSheet, toast, confirmDialog, notePrompt } from '../ui.js';
 import { transactionRow } from './home.js';
 
 const BREAKDOWN_TABS = [
@@ -52,9 +52,7 @@ export function renderMonth(app, options = {}) {
         el('div', { class: 'col col-primary' },
           breakdownCard(summary),
           totalsCard(summary),
-          budgetSection(summary),
-          incomeSection(summary),
-          savingsSection(summary),
+          ...targetSections(summary),
           balanceSection(summary),
         ),
         el('div', { class: 'col col-secondary' },
@@ -78,7 +76,7 @@ export function renderMonth(app, options = {}) {
         title: `สัดส่วน${tab.label}ตามประเภท`,
         centerLabel: 'บาท',
         onSlice: (row) => {
-          state.filterType = row.name === 'ไม่ระบุประเภท' ? '' : row.name;
+          state.filterType = row.name === UNCATEGORISED ? '' : row.name;
           rerender();
         },
       }),
@@ -168,14 +166,29 @@ export function renderMonth(app, options = {}) {
     );
   }
 
+  /**
+   * งบ รายได้ และการออม — แสดงเฉพาะส่วนที่ตั้งงบ/เป้าหมายไว้แล้ว
+   * ถ้ายังไม่ได้ตั้งอะไรเลย ให้เหลือบรรทัดเดียวชวนไปตั้ง แทนแถบว่าง ๆ หลายแถบ
+   */
+  function targetSections(summary) {
+    const sections = [budgetSection(summary), incomeSection(summary), savingsSection(summary)]
+      .filter(Boolean);
+    if (sections.length > 0) return sections;
+    return [notePrompt('ยังไม่ได้ตั้งงบหรือเป้าหมาย', 'ตั้งค่า', () => app.go('settings'))];
+  }
+
   function budgetSection(summary) {
     const actualByGroup = summary.byGroup;
-    const totalBudget = BUDGET_GROUPS.reduce((sum, g) => sum + groupBudget(g), 0);
-    const totalActual = BUDGET_GROUPS.reduce((sum, g) => sum + actualByGroup[g], 0);
+    // เฉพาะกลุ่มที่ตั้งงบไว้ ทั้งในแถบและในยอดรวมด้านบน
+    // (ไม่งั้นยอดใช้จริงของกลุ่มที่ไม่มีงบจะไปโผล่เทียบกับงบของกลุ่มอื่น)
+    const groups = BUDGET_GROUPS.filter((g) => groupBudget(g) > 0);
+    if (groups.length === 0) return null;
+    const totalBudget = groups.reduce((sum, g) => sum + groupBudget(g), 0);
+    const totalActual = groups.reduce((sum, g) => sum + actualByGroup[g], 0);
 
     return collapsible('budget', 'งบประมาณ vs ใช้จริง',
       `${formatNumber(totalActual)} / ${formatNumber(totalBudget)} บาท`,
-      () => BUDGET_GROUPS.map((code) => groupBlock(code, actualByGroup[code], summary)));
+      () => groups.map((code) => groupBlock(code, actualByGroup[code], summary)));
   }
 
   function groupBudget(code) {
@@ -320,6 +333,7 @@ export function renderMonth(app, options = {}) {
     }
     const actualTotal = summary.byGroup[code];
     const targetTotal = cats.reduce((sum, c) => sum + budgetFor(app.store.settings, state.key, c.name), 0);
+    if (targetTotal === 0) return null;
     const actualWord = code === 'SV' ? 'ออมได้จริง' : 'จริง';
 
     return collapsible(id, title, `${formatNumber(actualTotal)} / ${formatNumber(targetTotal)} บาท`, () => [

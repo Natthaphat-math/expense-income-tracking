@@ -6,7 +6,7 @@ import {
   sumByType, budgetFor, activeCategories, BUDGET_GROUPS, groupLabel,
 } from '../model.js';
 import { groupedBarChart, donutChart, progressBar } from '../charts.js';
-import { openPicker } from '../ui.js';
+import { openPicker, notePrompt } from '../ui.js';
 
 const BREAKDOWN_TABS = [
   { id: 'expense', label: 'รายจ่าย', groups: ['DE', 'SD', 'IV'] },
@@ -100,11 +100,20 @@ export function renderYear(app, options = {}) {
     const savingsTarget = yearTarget(['SV']);
     const expenseActual = BUDGET_GROUPS.reduce((sum, g) => sum + summary.byGroup[g], 0);
 
+    // แสดงเฉพาะแถวที่ตั้งเป้าหมาย/งบไว้ — แถวที่เป็น 0 มีแต่แถบว่างกับคำว่า "ยังไม่ได้ตั้ง"
+    const rows = [
+      ['รายได้', summary.income, incomeTarget, 'เป้าหมาย', true],
+      ['รายจ่าย', expenseActual, expenseTarget, 'งบ', false],
+      ['การออม', summary.savings, savingsTarget, 'เป้าหมาย', true],
+    ].filter(([, , target]) => target > 0);
+
+    if (rows.length === 0) {
+      return notePrompt('ยังไม่ได้ตั้งงบหรือเป้าหมาย', 'ตั้งค่า', () => app.go('settings'));
+    }
+
     return el('section', { class: 'card' },
       el('h2', { class: 'card-title' }, 'ความคืบหน้าทั้งปี'),
-      progressRow('รายได้', summary.income, incomeTarget, 'เป้าหมาย', true),
-      progressRow('รายจ่าย', expenseActual, expenseTarget, 'งบ', false),
-      progressRow('การออม', summary.savings, savingsTarget, 'เป้าหมาย', true),
+      rows.map((r) => progressRow(...r)),
     );
   }
 
