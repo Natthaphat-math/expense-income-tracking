@@ -194,6 +194,40 @@ function lookupLearned(learned, name) {
   return learned[key] ?? null;
 }
 
+/**
+ * เสนอประเภทให้ชื่อรายการที่ยังไม่ระบุประเภท (ใช้ในหน้าจัดประเภท)
+ *
+ * source = 'history' — เคยตั้งประเภทให้ชื่อนี้มาก่อน มั่นใจพอให้ "ใช้ทั้งหมด" ได้
+ * source = 'guess'   — ชื่อขึ้นต้นด้วยชื่อประเภทหรือคำเรียกอื่นของประเภท
+ *
+ * เทียบเฉพาะคำขึ้นต้น ไม่หาคำที่อยู่กลางชื่อ เพราะจะเดาผิดง่าย
+ * เช่น "รถไฟฟ้า" มีคำว่า "ไฟฟ้า" อยู่ แต่ไม่ใช่ค่าไฟฟ้า
+ *
+ * @returns {{ type: string, source: 'history'|'guess' } | null}
+ */
+export function suggestType(name, { categories = [], kind = 'expense', learned = null } = {}) {
+  const text = String(name ?? '').trim();
+  if (!text) return null;
+  const pool = categories.filter((c) => !c.archived && (c.group === 'IN' ? 'income' : 'expense') === kind);
+  const usable = (type) => pool.some((c) => c.name === type);
+
+  const remembered = lookupLearned(learned, text);
+  if (remembered && usable(remembered)) return { type: remembered, source: 'history' };
+
+  const lower = text.toLowerCase();
+  let best = null;
+  for (const c of pool) {
+    const words = [c.name, stripTypePrefix(c.name), ...(c.aliases || [])];
+    for (const word of words) {
+      const w = String(word ?? '').trim().toLowerCase();
+      if (w.length < 2 || !lower.startsWith(w)) continue;
+      // คำที่ยาวกว่าเจาะจงกว่า ("น้ำหวาน" ดีกว่า "น้ำ")
+      if (!best || w.length > best.length) best = { length: w.length, type: c.name };
+    }
+  }
+  return best ? { type: best.type, source: 'guess' } : null;
+}
+
 /** แยกข้อความหลายบรรทัด (ตัดบรรทัดว่างทิ้ง) */
 export function splitLines(text) {
   return String(text ?? '')

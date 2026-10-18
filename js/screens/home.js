@@ -51,6 +51,7 @@ export function renderDay(app) {
       : null,
     summaryCard(app, day, rows),
     app.backupBanner(),
+    sortPrompt(app),
     quickAdd(app, day),
     el('section', { class: 'day-list' },
       el('div', { class: 'section-head' },
@@ -133,6 +134,20 @@ function summaryCard(app, day, rows) {
     elapsed.length > 0 && logged < elapsed.length
       ? el('p', { class: 'hero-note' }, `บันทึกไปแล้ว ${logged} จาก ${elapsed.length} วันที่ผ่านมา`)
       : null,
+  );
+}
+
+/** ชวนไปจัดประเภท เมื่อยังมีรายการที่ไม่ระบุประเภท */
+function sortPrompt(app) {
+  const count = app.store.untypedCount;
+  if (count === 0) return null;
+  return el('button', { class: 'sort-prompt', type: 'button', onclick: () => app.go('sort') },
+    categoryTile(null, 'DE', { size: 'sm' }),
+    el('span', { class: 'sort-prompt-text' },
+      el('strong', {}, `ยังไม่ระบุประเภท ${formatNumber(count)} รายการ`),
+      el('span', {}, 'จัดทีละชื่อ ครั้งเดียวได้ทุกรายการ'),
+    ),
+    el('span', { class: 'sort-prompt-go' }, 'จัดประเภท', icon('chevronRight', { size: 18 })),
   );
 }
 

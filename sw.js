@@ -1,7 +1,7 @@
 // service worker แบบเรียบง่าย — แคชไฟล์ของแอปไว้ให้เปิดได้ตอนออฟไลน์
 // ข้อมูลของผู้ใช้อยู่ใน localStorage ไม่ได้ผ่านที่นี่
 
-const CACHE = 'tet-v6';
+const CACHE = 'tet-v7';
 
 const ASSETS = [
   './',
@@ -37,6 +37,7 @@ const ASSETS = [
   './js/screens/month.js',
   './js/screens/year.js',
   './js/screens/settings.js',
+  './js/screens/sort.js',
   './js/screens/sync-ui.js',
   './js/firebase-config.js',
   './js/remote.js',

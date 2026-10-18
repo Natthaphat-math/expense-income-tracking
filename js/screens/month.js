@@ -470,6 +470,9 @@ export function renderMonth(app, options = {}) {
           }, state.filterType === null
             ? 'ทั้งหมด'
             : state.filterType === '' ? 'ไม่ระบุประเภท' : state.filterType),
+          app.store.untypedCount > 0 && !state.selecting
+            ? el('button', { class: 'chip chip-tonal', type: 'button', onclick: () => app.go('sort') }, 'จัดประเภท')
+            : null,
           rows.length > 0
             ? el('button', {
                 class: `chip ${state.selecting ? 'chip-on' : ''}`, type: 'button',

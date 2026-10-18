@@ -64,3 +64,40 @@ test('frequentItems: needs two uses, suggests the usual amount', async () => {
   assert.equal(items[0].amount, 45);
   assert.equal(items[0].type, 'ค่าเครื่องดื่ม');
 });
+
+test('suggestType: history first, then names that start with a category word', async () => {
+  const { suggestType } = await import('../js/parser.js');
+  const { DEFAULT_CATEGORIES } = await import('../js/model.js');
+  const opts = (learned = null, kind = 'expense') => ({ categories: DEFAULT_CATEGORIES, kind, learned });
+
+  // เคยตั้งไว้ → มาจากประวัติ
+  const learned = new Map([['เซเว่น', 'ค่าของใช้ในบ้าน']]);
+  assert.deepEqual(suggestType('เซเว่น', opts(learned)), { type: 'ค่าของใช้ในบ้าน', source: 'history' });
+  // ประวัติชี้ไปประเภทของอีกฝั่ง → ไม่ใช้
+  assert.equal(suggestType('เงินเดือน', opts(new Map([['เงินเดือน', 'ค่าอาหาร']]), 'income'))?.type, 'เงินเดือน');
+
+  // ขึ้นต้นด้วยคำเรียกของประเภท
+  assert.deepEqual(suggestType('ชาเขียว', opts()), { type: 'ค่าเครื่องดื่ม', source: 'guess' });
+  assert.equal(suggestType('ข้าวมันไก่', opts())?.type, 'ค่าอาหาร');
+  assert.equal(suggestType('กาแฟเย็น', opts())?.type, 'ค่าเครื่องดื่ม');
+  // คำยาวกว่าชนะ: "ค่าเน็ต" ไม่ใช่ "ค่า..." อื่น
+  assert.equal(suggestType('ค่าเน็ตบ้าน', opts())?.type, 'ค่าอินเทอร์เน็ต');
+
+  // คำที่อยู่กลางชื่อไม่นับ — "รถไฟฟ้า" ไม่ใช่ค่าไฟฟ้า
+  assert.equal(suggestType('รถไฟฟ้า', opts())?.type ?? null, null);
+  assert.equal(suggestType('เค้ก', opts()), null);
+});
+
+test('untypedGroups: groups by name and side, biggest first', async () => {
+  const store = await new Store(new MemoryAdapter()).load();
+  for (const name of ['ไป', 'ไป ', 'ไป', 'กาแฟ']) {
+    await store.save({ kind: 'expense', name, amount: 10, date: '2026-10-01' });
+  }
+  await store.save({ kind: 'expense', name: 'กาแฟ', amount: 45, date: '2026-10-02', type: 'ค่าเครื่องดื่ม' });
+  await store.save({ kind: 'income', name: 'ไป', amount: 5, date: '2026-10-03' });
+  const groups = store.untypedGroups();
+  assert.deepEqual(groups.map((g) => [g.kind, g.name, g.count]), [
+    ['expense', 'ไป', 3], ['income', 'ไป', 1], ['expense', 'กาแฟ', 1],
+  ]);
+  assert.equal(store.untypedCount, 5);
+});

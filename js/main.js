@@ -12,6 +12,7 @@ import { renderLog } from './screens/log.js';
 import { renderMonth } from './screens/month.js';
 import { renderYear } from './screens/year.js';
 import { renderSettings } from './screens/settings.js';
+import { renderSort } from './screens/sort.js';
 import { handleSignInLinkOnLoad } from './screens/sync-ui.js';
 import { SyncManager } from './sync.js';
 import { SYNC_ENABLED } from './firebase-config.js';
@@ -100,6 +101,7 @@ class App {
       month: renderMonth,
       year: renderYear,
       settings: renderSettings,
+      sort: renderSort,
     };
     replace(this.root, screens[name](this, options));
     this.root.scrollTop = 0;
@@ -110,7 +112,8 @@ class App {
   renderBar(name) {
     // หน้าบันทึกรายการเป็นฟอร์ม มีปุ่มยกเลิก/บันทึกของตัวเอง
     // ถ้าโผล่ปุ่มเปลี่ยนหน้ามาด้วยจะกดพลาดแล้วข้อมูลที่พิมพ์ไว้หาย
-    if (name === 'log') {
+    // หน้าจัดประเภทเป็นงานที่ทำต่อเนื่อง มีปุ่ม "เสร็จ" ของตัวเอง
+    if (name === 'log' || name === 'sort') {
       replace(this.bar);
       this.bar.hidden = true;
       return;

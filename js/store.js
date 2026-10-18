@@ -18,6 +18,7 @@ export class Store extends EventTarget {
     this.settings = null;
     this._learned = null;
     this._frequent = null;
+    this._untyped = null;
   }
 
   async load() {
@@ -31,6 +32,7 @@ export class Store extends EventTarget {
   _changed() {
     this._learned = null;
     this._frequent = null;
+    this._untyped = null;
     this.dispatchEvent(new CustomEvent('change'));
   }
 
@@ -98,6 +100,38 @@ export class Store extends EventTarget {
         });
     }
     return this._frequent.slice(0, limit);
+  }
+
+  /** จำนวนรายการที่ยังไม่ระบุประเภท */
+  get untypedCount() {
+    return this.untypedGroups().reduce((sum, g) => sum + g.count, 0);
+  }
+
+  /**
+   * รายการที่ยังไม่ระบุประเภท จัดกลุ่มตามชื่อ (ไม่สนตัวพิมพ์/ช่องว่างหัวท้าย) และฝั่งรับ/จ่าย
+   * เรียงจากกลุ่มใหญ่ไปเล็ก — จัดกลุ่มบนสุดก่อนได้ผลมากที่สุด
+   */
+  untypedGroups() {
+    if (!this._untyped) {
+      const byKey = new Map();
+      for (const tx of this.active) {
+        if (tx.type) continue;
+        const name = tx.name.trim();
+        const key = `${tx.kind}|${name.toLowerCase()}`;
+        let g = byKey.get(key);
+        if (!g) {
+          g = { key, kind: tx.kind, name, ids: [], count: 0, total: 0, lastDate: '' };
+          byKey.set(key, g);
+        }
+        g.ids.push(tx.id);
+        g.count += 1;
+        g.total += tx.amount ?? 0;
+        if (tx.date > g.lastDate) g.lastDate = tx.date;
+      }
+      this._untyped = [...byKey.values()]
+        .sort((a, b) => b.count - a.count || b.lastDate.localeCompare(a.lastDate));
+    }
+    return this._untyped;
   }
 
   byId(id) {
