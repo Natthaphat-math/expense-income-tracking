@@ -34,6 +34,23 @@ export function todayISO(now = new Date()) {
   return toISODate(now);
 }
 
+/** ก่อนตีสี่ยังนับเป็น "คืนของเมื่อวาน" — คนที่จดตอนดึกส่วนใหญ่กำลังจดของวันที่เพิ่งผ่านไป */
+export const NIGHT_CUTOFF_HOUR = 4;
+
+/**
+ * วันที่ที่ควรใช้เป็นค่าเริ่มต้นตอนบันทึก
+ * ระหว่างเที่ยงคืนถึงตีสี่ ให้เป็นเมื่อวาน ไม่งั้นรายการของทั้งวันจะไปตกวันใหม่
+ */
+export function entryDayISO(now = new Date()) {
+  const today = todayISO(now);
+  return now.getHours() < NIGHT_CUTOFF_HOUR ? addDays(today, -1) : today;
+}
+
+/** ตอนนี้อยู่ในช่วงหลังเที่ยงคืนที่ยังนับเป็นของเมื่อวานหรือไม่ */
+export function isLateNight(now = new Date()) {
+  return now.getHours() < NIGHT_CUTOFF_HOUR;
+}
+
 export function toISODate(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');

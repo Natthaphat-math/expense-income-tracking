@@ -62,19 +62,37 @@ export function closeTopSheet() {
 }
 
 /** ข้อความแจ้งสั้น ๆ ด้านล่างจอ */
-export function toast(message, { duration = 2600 } = {}) {
+/**
+ * ข้อความแจ้งสั้น ๆ ด้านล่างจอ
+ * action = { label, onClick } — ปุ่มในข้อความ เช่น "เลิกทำ" (อยู่นานขึ้นให้ทันกด)
+ */
+export function toast(message, { duration = null, action = null } = {}) {
   let host = document.querySelector('.toast-host');
   if (!host) {
     host = el('div', { class: 'toast-host', role: 'status', 'aria-live': 'polite' });
     document.body.appendChild(host);
   }
-  const node = el('div', { class: 'toast' }, message);
-  host.appendChild(node);
-  requestAnimationFrame(() => node.classList.add('toast-in'));
-  setTimeout(() => {
+  // ข้อความใหม่แทนที่ข้อความเก่า — ไม่ให้ปุ่มเลิกทำของงานก่อนหน้าค้างซ้อนกัน
+  for (const old of host.children) old.remove();
+
+  let timer = null;
+  const dismiss = () => {
+    clearTimeout(timer);
     node.classList.remove('toast-in');
     setTimeout(() => node.remove(), 250);
-  }, duration);
+  };
+  const node = el('div', { class: `toast ${action ? 'toast-action' : ''}` },
+    el('span', { class: 'toast-text' }, message),
+    action
+      ? el('button', {
+          class: 'toast-button', type: 'button',
+          onclick: () => { dismiss(); action.onClick(); },
+        }, action.label)
+      : null,
+  );
+  host.appendChild(node);
+  requestAnimationFrame(() => node.classList.add('toast-in'));
+  timer = setTimeout(dismiss, duration ?? (action ? 6000 : 2600));
 }
 
 /**

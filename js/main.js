@@ -3,9 +3,10 @@
 import { el, replace, $ } from './dom.js';
 import { LocalStorageAdapter } from './storage.js';
 import { Store } from './store.js';
-import { todayISO, monthKeyOf } from './format.js';
+import { todayISO, entryDayISO, monthKeyOf } from './format.js';
 import { toast } from './ui.js';
 import { icon, ensureIconSprite } from './icons.js';
+import { applyTheme, watchSystemTheme } from './theme.js';
 import { renderDay } from './screens/home.js';
 import { renderLog } from './screens/log.js';
 import { renderMonth } from './screens/month.js';
@@ -56,7 +57,7 @@ class App {
     this.stack = [{ name: 'day', options: {} }];
     this.sync = null; // SyncManager จะถูกใส่ให้ทีหลัง (ไม่บล็อกการเปิดแอป)
     this.state = {
-      dayISO: todayISO(),
+      dayISO: entryDayISO(),
       monthKey: monthKeyOf(todayISO()),
       year: Number(todayISO().slice(0, 4)),
       monthSections: new Set(['budget', 'income', 'savings']),
@@ -130,11 +131,29 @@ class App {
         class: 'tab-add', type: 'button', 'aria-label': 'บันทึกรายการ',
         onclick: () => this.openLog({
           kind: 'expense',
-          date: name === 'day' ? this.state.dayISO : todayISO(),
+          date: name === 'day' ? this.state.dayISO : entryDayISO(),
         }),
       }, icon('plus', { size: 28 })),
       tab(PAGES[2]), tab(PAGES[3]),
     );
+  }
+
+  /**
+   * แจ้งผลพร้อมปุ่ม "เลิกทำ"
+   * entries = [{ id, before }] ตาม Store.revert
+   */
+  notifyUndoable(message, entries) {
+    toast(message, {
+      action: {
+        label: 'เลิกทำ',
+        onClick: async () => {
+          await this.store.revert(entries);
+          // หน้าบันทึกเป็นฟอร์มที่อาจพิมพ์ค้างอยู่ — ห้ามวาดใหม่ทับ
+          if (this.current.name !== 'log') this.render();
+          toast('ย้อนกลับแล้ว');
+        },
+      },
+    });
   }
 
   /** แถบเตือนให้สำรองข้อมูล — ขึ้นเฉพาะตอนที่ห่างจากครั้งล่าสุดนานแล้ว */
@@ -187,6 +206,8 @@ async function boot() {
     return;
   }
 
+  applyTheme();
+  watchSystemTheme();
   ensureIconSprite();
   const app = new App(store);
   globalThis.__app = app; // ช่วยตรวจสอบตอนพัฒนา

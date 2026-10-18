@@ -166,6 +166,19 @@ export class Store extends EventTarget {
     this._changed();
   }
 
+  /**
+   * ย้อนการเปลี่ยนแปลง — entries = [{ id, before }]
+   * before = รายการก่อนเปลี่ยน (null แปลว่าเพิ่งสร้าง ให้ลบทิ้ง)
+   * เขียนเป็นการแก้ไขใหม่ที่ updatedAt ล่าสุด เพื่อให้การซิงก์ส่งค่าเดิมกลับไปทุกเครื่อง
+   */
+  async revert(entries) {
+    const restore = entries.filter((e) => e.before).map((e) => ({ ...e.before }));
+    if (restore.length > 0) await this.saveMany(restore);
+    for (const e of entries) {
+      if (!e.before) await this.remove(e.id);
+    }
+  }
+
   async replaceTransactions(txs) {
     if (typeof this.adapter.replaceAll === 'function') {
       this.transactions = await this.adapter.replaceAll(txs);

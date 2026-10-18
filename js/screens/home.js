@@ -2,13 +2,13 @@
 
 import { el } from '../dom.js';
 import {
-  formatMoney, formatNumber, longDate, todayISO, relativeDate,
+  formatMoney, formatNumber, longDate, todayISO, entryDayISO, isLateNight, relativeDate,
   weekDays, weekdayShort, weekRangeLabel, fromISODate,
 } from '../format.js';
 import {
   summarize, activeCategories, groupForCategory, groupKind, GROUPS,
 } from '../model.js';
-import { confirmDialog, toast, openPicker, pageHeader } from '../ui.js';
+import { openPicker, pageHeader } from '../ui.js';
 import { icon, categoryTile } from '../icons.js';
 
 const WEEKDAY_LONG = new Intl.DateTimeFormat('th-TH-u-ca-gregory', { weekday: 'long' });
@@ -25,7 +25,7 @@ function greeting(now = new Date()) {
 export function renderDay(app) {
   // เปิดจากแท็บ "วัน" ให้เด้งกลับมาวันนี้ — ครั้งเดียว ไม่งั้นแตะแท่งวันอื่นแล้วจะเด้งกลับทุกครั้ง
   if (app.current.options?.reset) {
-    app.state.dayISO = todayISO();
+    app.state.dayISO = entryDayISO();
     app.current.options.reset = false;
   }
 
@@ -45,6 +45,10 @@ export function renderDay(app) {
             onclick: () => { app.state.dayISO = today; app.render(); },
           }, 'กลับไปวันนี้')],
     }),
+    // หลังเที่ยงคืน แอปเปิดวันของเมื่อวานให้ก่อน — บอกไว้ให้รู้ว่าทำไม
+    isLateNight() && day === entryDayISO() && !isToday
+      ? el('p', { class: 'night-note' }, 'เลยเที่ยงคืนแล้ว แสดงของเมื่อวานให้ก่อน รายการที่เพิ่มจะลงเป็นของเมื่อวาน')
+      : null,
     summaryCard(app, day, rows),
     app.backupBanner(),
     quickAdd(app, day),
@@ -166,19 +170,6 @@ function emptyState(isToday) {
 }
 
 /**
- * "08:30" — เฉพาะรายการที่บันทึกในวันนั้นจริง
- * รายการนำเข้าหรือที่ลงย้อนหลังไม่มีเวลาที่มีความหมาย จึงไม่แสดง
- */
-function timeOf(tx) {
-  const created = tx.createdAt;
-  if (!Number.isFinite(created) || created % 60000 === 0) return null;
-  const d = new Date(created);
-  const local = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  if (local !== tx.date) return null;
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
-/**
  * แถวรายการหนึ่งรายการ
  * @param {object} options
  * @param {boolean} options.compact      แถวเตี้ย ไอคอนเล็ก สำหรับรายการยาว ๆ ของหน้าเดือน
@@ -193,7 +184,6 @@ export function transactionRow(app, tx, {
   const isIncome = tx.kind === 'income';
   const sign = isIncome ? '+' : '−';
   const untyped = !tx.type;
-  const time = timeOf(tx);
 
   const classes = ['tx-row', `tx-${isIncome ? 'income' : 'expense'}`];
   if (compact) classes.push('tx-row-compact');
@@ -206,7 +196,7 @@ export function transactionRow(app, tx, {
   const subtitle = untyped
     ? el('span', { class: `tx-sub ${tileButton && !compact ? 'tx-sub-action' : ''}` },
         tileButton && !compact ? 'แตะ ? เพื่อเลือกประเภท' : 'ไม่ระบุประเภท')
-    : el('span', { class: 'tx-sub' }, time ? `${tx.type} · ${time}` : tx.type);
+    : el('span', { class: 'tx-sub' }, tx.type);
 
   return el('li', { class: classes.join(' ') },
     tileButton
@@ -250,9 +240,10 @@ function pickTypeFor(app, tx, onChanged) {
     groupLabels: Object.fromEntries(GROUPS.map((g) => [g.code, g.label])),
     onSelect: async (name) => {
       const group = groupForCategory(app.store.settings, name, tx.kind);
+      const before = app.store.byId(tx.id);
       await app.store.save({ ...tx, type: name, group, kind: groupKind(group) });
-      toast(`ตั้งประเภท “${name}” แล้ว`);
       onChanged?.();
+      app.notifyUndoable(`ตั้งประเภท “${name}” แล้ว`, [{ id: tx.id, before }]);
     },
   });
 }
@@ -261,15 +252,10 @@ function openRowActions(app, tx) {
   app.openLog({ mode: 'edit', transaction: tx });
 }
 
+/** ลบทันทีโดยไม่ถามซ้ำ — กดพลาดก็เลิกทำได้จากข้อความที่ขึ้นมา */
 export async function deleteTransaction(app, tx) {
-  const ok = await confirmDialog({
-    title: 'ลบรายการนี้?',
-    message: `“${tx.name}” จะถูกลบออกจากบันทึก`,
-    confirmText: 'ลบ',
-    danger: true,
-  });
-  if (!ok) return false;
+  const before = app.store.byId(tx.id) ?? tx;
   await app.store.remove(tx.id);
-  toast('ลบรายการแล้ว');
+  app.notifyUndoable(`ลบ “${tx.name}” แล้ว`, [{ id: tx.id, before }]);
   return true;
 }

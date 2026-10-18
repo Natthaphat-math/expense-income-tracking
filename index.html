@@ -10,6 +10,11 @@
 <meta name="theme-color" content="#f5f6fa">
 <meta name="format-detection" content="telephone=no">
 <title>รายรับรายจ่าย</title>
+<script>
+  // ตั้งโหมดสี (สว่าง/มืด/ตามเครื่อง) ก่อนวาดหน้า ไม่ให้จอวาบ — ค่าเดียวกับ js/theme.js
+  try { document.documentElement.dataset.theme = localStorage.getItem('tet:theme') || 'light'; }
+  catch (e) { document.documentElement.dataset.theme = 'light'; }
+</script>
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
 <link rel="icon" href="./icons/icon-192.png" sizes="192x192">

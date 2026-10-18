@@ -9,6 +9,7 @@ import {
   openSheet, openPicker, confirmDialog, promptText, promptNumber, toast, pageHeader,
 } from '../ui.js';
 import { categoryTile, icon } from '../icons.js';
+import { THEMES, getTheme, setTheme } from '../theme.js';
 import {
   buildBackup, backupFilename, parseBackupFile, mergeTransactions, mergeCategories,
 } from '../backup.js';
@@ -24,9 +25,25 @@ export function renderSettings(app) {
       pageHeader({ title: 'ตั้งค่า' }),
       el('div', { class: 'settings-body' },
         el('div', { class: 'col col-primary' }, syncCard(app, rerender), backupCard(), importCard()),
-        el('div', { class: 'col col-secondary' }, categoriesCard(), budgetsCard(), helpCard()),
+        el('div', { class: 'col col-secondary' }, displayCard(), categoriesCard(), budgetsCard(), helpCard()),
       ),
     ];
+  }
+
+  // ------------------------------------------------------------- การแสดงผล
+  function displayCard() {
+    const current = getTheme();
+    return el('section', { class: 'card' },
+      el('h2', { class: 'card-title' }, 'การแสดงผล'),
+      el('div', { class: 'seg seg-full seg-theme', role: 'group', 'aria-label': 'โหมดสี' },
+        THEMES.map((t) => el('button', {
+          class: `seg-item ${t.id === current ? 'seg-item-on' : ''}`, type: 'button',
+          'aria-pressed': t.id === current ? 'true' : 'false',
+          onclick: () => { setTheme(t.id); rerender(); },
+        }, t.label))),
+      el('p', { class: 'field-hint' },
+        'ตามเครื่อง = มืดเมื่อ iPhone/iPad ตั้งโหมดมืดไว้ · ตั้งแยกกันได้ในแต่ละเครื่อง'),
+    );
   }
 
   // ------------------------------------------------------------- สำรองข้อมูล

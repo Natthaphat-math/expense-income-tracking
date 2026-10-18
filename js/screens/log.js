@@ -1,7 +1,7 @@
 // หน้าบันทึกรายการ — พิมพ์อิสระแล้วแอปเติมช่องให้ พร้อมโหมดหลายรายการ
 
 import { el, replace } from '../dom.js';
-import { formatMoney, relativeDate, todayISO } from '../format.js';
+import { formatMoney, relativeDate, entryDayISO, isLateNight, addDays, todayISO } from '../format.js';
 import {
   activeCategories, groupLabel, groupsForKind, groupForCategory,
   defaultGroupFor, normalizeAmount, GROUPS,
@@ -32,7 +32,7 @@ export function renderLog(app, options = {}) {
     type: editing?.type ?? prefill?.type ?? null,
     group: editing?.group
       ?? (prefill?.type ? groupForCategory(app.store.settings, prefill.type, startKind) : defaultGroupFor(startKind)),
-    date: editing?.date ?? options.date ?? todayISO(),
+    date: editing?.date ?? options.date ?? entryDayISO(),
     parsed: null,
     batch: null,
     dirty: false,
@@ -55,11 +55,12 @@ export function renderLog(app, options = {}) {
 
   const kindSwitch = el('div', { class: 'seg seg-full seg-kind', role: 'group', 'aria-label': 'รายจ่ายหรือรายรับ' });
 
+  // จดทีละหลายรายการเป็นวิธีหลัก (ส่วนใหญ่จดตอนกลางคืนรวดเดียวทั้งวัน) จึงให้ช่องสูงพอเห็นหลายบรรทัด
   const textarea = el('textarea', {
     class: 'input textarea',
-    rows: '3',
-    placeholder: 'รายละเอียด',
-    'aria-label': 'รายละเอียด',
+    rows: editing ? '2' : '4',
+    placeholder: editing ? 'รายละเอียด' : 'ข้าวมันไก่ 50\nชานม 45\nค่ารถ 30',
+    'aria-label': editing ? 'รายละเอียด' : 'รายการ พิมพ์ทีละบรรทัด',
     autocapitalize: 'sentences',
     autocorrect: 'on',
     spellcheck: 'false',
@@ -216,6 +217,9 @@ export function renderLog(app, options = {}) {
         categoryTile(state.type, state.group, { size: 'sm' })),
       pickerField('กลุ่มรายการ', groupLabel(state.group), false, pickGroup),
       pickerField('วันที่', relativeDate(state.date), false, () => pickDate(state.date, (iso) => setField('date', iso))),
+      !editing && isLateNight() && state.date === addDays(todayISO(), -1)
+        ? el('p', { class: 'field-hint night-hint' }, 'เลยเที่ยงคืนแล้ว จึงลงเป็นของเมื่อวานให้ แตะช่องวันที่เพื่อเปลี่ยน')
+        : null,
     );
   }
 
@@ -334,7 +338,7 @@ export function renderLog(app, options = {}) {
         toast('ยังไม่มีรายการที่บันทึกได้');
         return;
       }
-      await app.store.saveMany(rows.map((r) => ({
+      const saved = await app.store.saveMany(rows.map((r) => ({
         kind: state.kind,
         name: r.name.trim(),
         amount: r.amount,
@@ -342,8 +346,8 @@ export function renderLog(app, options = {}) {
         group: r.type ? groupForCategory(app.store.settings, r.type, state.kind) : state.group,
         date: r.date ?? state.date,
       })));
-      toast(`บันทึกแล้ว ${rows.length} รายการ`);
       app.back();
+      app.notifyUndoable(`บันทึกแล้ว ${rows.length} รายการ`, saved.map((t) => ({ id: t.id, before: null })));
       return;
     }
 
@@ -354,7 +358,8 @@ export function renderLog(app, options = {}) {
       return;
     }
 
-    await app.store.save({
+    const before = editing ? app.store.byId(editing.id) : null;
+    const saved = await app.store.save({
       id: editing?.id,
       createdAt: editing?.createdAt,
       kind: state.kind,
@@ -364,11 +369,14 @@ export function renderLog(app, options = {}) {
       group: state.type ? groupForCategory(app.store.settings, state.type, state.kind) : state.group,
       date: state.date,
     });
-    toast(editing ? 'แก้ไขรายการแล้ว' : 'บันทึกแล้ว');
     app.back();
+    app.notifyUndoable(editing ? 'แก้ไขรายการแล้ว' : 'บันทึกแล้ว', [{ id: saved.id, before }]);
   }
 
   function render() {
+    // โหมดหลายรายการบอกจำนวนบนปุ่ม จะได้รู้ว่ากดแล้วได้กี่รายการ
+    const count = state.batch ? state.batch.filter((r) => r.name.trim().length > 0).length : 0;
+    saveButton.textContent = state.batch && count > 0 ? `บันทึก ${count} รายการ` : 'บันทึก';
     replace(kindSwitch, [['expense', 'รายจ่าย'], ['income', 'รายรับ']].map(([kind, label]) => el('button', {
       class: `seg-item seg-kind-${kind} ${state.kind === kind ? 'seg-item-on' : ''}`, type: 'button',
       'aria-pressed': state.kind === kind ? 'true' : 'false',
@@ -378,6 +386,8 @@ export function renderLog(app, options = {}) {
     renderChips();
     renderBatch();
   }
+
+  const saveButton = el('button', { class: 'btn btn-primary', type: 'button', onclick: save }, 'บันทึก');
 
   reparse();
   render();
@@ -395,9 +405,13 @@ export function renderLog(app, options = {}) {
     el('main', { class: 'log-body' },
       kindSwitch,
       el('div', { class: 'field' },
-        el('span', { class: 'field-label' }, 'รายละเอียด'),
+        el('span', { class: 'field-label' }, editing ? 'รายละเอียด' : 'รายการ'),
         textarea,
-        el('p', { class: 'field-hint' }, 'พิมพ์หรือพูดก็ได้ เช่น “ก๋วยเตี๋ยว 20 บาท อาหาร” — ขึ้นบรรทัดใหม่เพื่อบันทึกหลายรายการพร้อมกัน'),
+        editing
+          ? null
+          : el('p', { class: 'field-hint' },
+              el('strong', {}, 'ขึ้นบรรทัดใหม่ = อีกรายการ'),
+              ' จดของทั้งวันในครั้งเดียวได้ พิมพ์หรือพูดก็ได้ เช่น “ก๋วยเตี๋ยว 20 บาท อาหาร”'),
       ),
       chipHost,
       fieldsHost,
@@ -405,7 +419,7 @@ export function renderLog(app, options = {}) {
     ),
     el('div', { class: 'log-actions' },
       el('button', { class: 'btn btn-ghost', type: 'button', onclick: cancel }, 'ยกเลิก'),
-      el('button', { class: 'btn btn-primary', type: 'button', onclick: save }, 'บันทึก'),
+      saveButton,
     ),
   );
 }

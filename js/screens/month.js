@@ -696,8 +696,9 @@ export function renderMonth(app, options = {}) {
     await app.store.saveMany(picked.map((t) => ({ ...t, type: name, group, kind })));
     state.selected.clear();
     state.selecting = false;
-    toast(`เปลี่ยนประเภทแล้ว ${formatNumber(picked.length)} รายการ`);
     rerender();
+    app.notifyUndoable(`เปลี่ยนประเภทแล้ว ${formatNumber(picked.length)} รายการ`,
+      picked.map((t) => ({ id: t.id, before: t })));
   }
 
   function openTypeFilter(summary) {
