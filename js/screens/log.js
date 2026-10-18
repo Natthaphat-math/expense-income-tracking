@@ -4,7 +4,7 @@ import { el, replace } from '../dom.js';
 import { formatMoney, relativeDate, entryDayISO, isLateNight, addDays, todayISO } from '../format.js';
 import {
   activeCategories, groupLabel, groupsForKind, groupForCategory,
-  defaultGroupFor, normalizeAmount, GROUPS,
+  defaultGroupFor, normalizeAmount, groupKind, GROUPS,
 } from '../model.js';
 import { parseLine, parseText, isBatch } from '../parser.js';
 import {
@@ -12,6 +12,7 @@ import {
 } from '../ui.js';
 import { deleteTransaction } from './home.js';
 import { icon, categoryTile } from '../icons.js';
+import { findSimilar } from '../duplicates.js';
 
 const DEBOUNCE_MS = 220;
 
@@ -338,16 +339,29 @@ export function renderLog(app, options = {}) {
         toast('ยังไม่มีรายการที่บันทึกได้');
         return;
       }
-      const saved = await app.store.saveMany(rows.map((r) => ({
+      let drafts = rows.map((r) => ({
         kind: state.kind,
         name: r.name.trim(),
         amount: r.amount,
         type: r.type,
         group: r.type ? groupForCategory(app.store.settings, r.type, state.kind) : state.group,
         date: r.date ?? state.date,
-      })));
+      }));
+      // รายการที่น่าจะนำเข้าจากสลิปไปแล้ว — ถามก่อนว่าจะข้ามไหม
+      const dupes = drafts.filter((d) => findSimilar(app.store.active, d, 'slip').length > 0);
+      if (dupes.length > 0) {
+        const choice = await askBatchDuplicates(dupes);
+        if (choice === 'cancel') return;
+        if (choice === 'skip') drafts = drafts.filter((d) => !dupes.includes(d));
+        if (drafts.length === 0) {
+          app.back();
+          toast('ไม่ได้บันทึกเพิ่ม — มีจากสลิปครบแล้ว');
+          return;
+        }
+      }
+      const saved = await app.store.saveMany(drafts);
       app.back();
-      app.notifyUndoable(`บันทึกแล้ว ${rows.length} รายการ`, saved.map((t) => ({ id: t.id, before: null })));
+      app.notifyUndoable(`บันทึกแล้ว ${saved.length} รายการ`, saved.map((t) => ({ id: t.id, before: null })));
       return;
     }
 
@@ -358,6 +372,29 @@ export function renderLog(app, options = {}) {
       return;
     }
 
+    const type = state.type;
+    const group = type ? groupForCategory(app.store.settings, type, state.kind) : state.group;
+    // พิมพ์เองซ้ำกับที่นำเข้าจากสลิปแล้วหรือเปล่า (เฉพาะรายการใหม่)
+    if (!editing) {
+      const match = findSimilar(app.store.active, {
+        kind: state.kind, amount: state.amount, date: state.date, type,
+      }, 'slip')[0];
+      if (match) {
+        const choice = await askSlipDuplicate(match);
+        if (choice === 'cancel') return;
+        if (choice === 'same') {
+          // ใช้รายการจากสลิปเดิม แต่เอาชื่อและประเภทที่เพิ่งพิมพ์ไปแทน (ชื่อจากสลิปมักเป็นชื่อคน)
+          const before = app.store.byId(match.id);
+          await app.store.save({
+            ...before, name, ...(type ? { type, group, kind: groupKind(group) } : {}),
+          });
+          app.back();
+          app.notifyUndoable(`รวมกับรายการจากสลิปแล้ว (${match.name})`, [{ id: match.id, before }]);
+          return;
+        }
+      }
+    }
+
     const before = editing ? app.store.byId(editing.id) : null;
     const saved = await app.store.save({
       id: editing?.id,
@@ -365,9 +402,12 @@ export function renderLog(app, options = {}) {
       kind: state.kind,
       name,
       amount: state.amount,
-      type: state.type,
-      group: state.type ? groupForCategory(app.store.settings, state.type, state.kind) : state.group,
+      type,
+      group,
       date: state.date,
+      // แก้รายการที่มาจากสลิป ต้องเก็บเลขอ้างอิงไว้ ไม่งั้นสลิปใบเดิมจะนำเข้าซ้ำได้
+      slipRef: editing?.slipRef,
+      slipHash: editing?.slipHash,
     });
     app.back();
     app.notifyUndoable(editing ? 'แก้ไขรายการแล้ว' : 'บันทึกแล้ว', [{ id: saved.id, before }]);
@@ -400,7 +440,23 @@ export function renderLog(app, options = {}) {
             class: 'btn-icon btn-icon-danger', type: 'button', 'aria-label': 'ลบรายการ',
             onclick: async () => { if (await deleteTransaction(app, editing)) app.back(); },
           }, icon('trash'))
-        : el('span', { class: 'btn-icon-placeholder' }),
+        : el('button', {
+            class: 'btn btn-small btn-tonal log-slip', type: 'button',
+            onclick: async () => {
+              if (state.dirty) {
+                const ok = await confirmDialog({
+                  title: 'ทิ้งสิ่งที่พิมพ์ไว้?',
+                  message: 'จะไปหน้านำเข้าสลิป ข้อมูลที่ยังไม่ได้บันทึกจะหายไป',
+                  confirmText: 'ทิ้งแล้วไปต่อ',
+                  danger: true,
+                });
+                if (!ok) return;
+              }
+              // แทนที่หน้าบันทึก ไม่ซ้อน — กดเสร็จแล้วกลับไปหน้าที่มาก่อนหน้านี้
+              app.stack.pop();
+              app.go('slips');
+            },
+          }, icon('image', { size: 18 }), ' จากสลิป'),
     ),
     el('main', { class: 'log-body' },
       kindSwitch,
@@ -422,6 +478,61 @@ export function renderLog(app, options = {}) {
       saveButton,
     ),
   );
+}
+
+/**
+ * ถามเมื่อรายการที่พิมพ์เองคล้ายกับรายการจากสลิป
+ * @returns {Promise<'separate'|'same'|'cancel'>}
+ */
+function askSlipDuplicate(match) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (value) => {
+      if (done) return;
+      done = true;
+      handle.close();
+      resolve(value);
+    };
+    const handle = openSheet({
+      title: 'อาจซ้ำกับรายการจากสลิป',
+      body: el('div', { class: 'form' },
+        el('p', { class: 'confirm-message' },
+          `มีรายการจากสลิปที่คล้ายกัน:\n${match.name} ${formatMoney(match.amount)} (${relativeDate(match.date)})`),
+        el('button', { class: 'btn btn-primary btn-block', type: 'button', onclick: () => finish('same') },
+          'เป็นรายการเดียวกัน — ใช้ชื่อที่พิมพ์'),
+        el('button', { class: 'btn btn-block', type: 'button', onclick: () => finish('separate') },
+          'คนละรายการ — บันทึกแยก'),
+        el('button', { class: 'btn btn-ghost btn-block', type: 'button', onclick: () => finish('cancel') },
+          'กลับไปแก้'),
+      ),
+      onClose: () => { if (!done) { done = true; resolve('cancel'); } },
+    });
+  });
+}
+
+/** หลายรายการ: บางบรรทัดคล้ายรายการจากสลิป — ข้ามบรรทัดเหล่านั้น หรือบันทึกทั้งหมด */
+function askBatchDuplicates(dupes) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (value) => {
+      if (done) return;
+      done = true;
+      handle.close();
+      resolve(value);
+    };
+    const list = dupes.slice(0, 6).map((d) => `• ${d.name} ${formatMoney(d.amount)}`).join('\n');
+    const handle = openSheet({
+      title: `${dupes.length} รายการอาจมีจากสลิปแล้ว`,
+      body: el('div', { class: 'form' },
+        el('p', { class: 'confirm-message' }, `${list}${dupes.length > 6 ? '\n…' : ''}`),
+        el('button', { class: 'btn btn-primary btn-block', type: 'button', onclick: () => finish('skip') },
+          'ข้ามรายการที่ซ้ำ บันทึกที่เหลือ'),
+        el('button', { class: 'btn btn-block', type: 'button', onclick: () => finish('all') }, 'บันทึกทั้งหมด'),
+        el('button', { class: 'btn btn-ghost btn-block', type: 'button', onclick: () => finish('cancel') }, 'กลับไปแก้'),
+      ),
+      onClose: () => { if (!done) { done = true; resolve('cancel'); } },
+    });
+  });
 }
 
 /** ช่องที่แตะแล้วเปิดตัวเลือก (ประเภท / กลุ่ม / วันที่) */

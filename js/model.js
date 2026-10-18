@@ -133,7 +133,7 @@ export function activeCategories(settings, { kind = null, group = null } = {}) {
 export function makeTransaction(input) {
   const now = Date.now();
   const kind = input.kind === 'income' ? 'income' : 'expense';
-  return {
+  return withSlip({
     id: input.id || newId(),
     kind,
     name: String(input.name ?? '').trim().slice(0, MAX_NAME),
@@ -144,7 +144,27 @@ export function makeTransaction(input) {
     createdAt: input.createdAt ?? now,
     updatedAt: now,
     deleted: input.deleted === true,
-  };
+  }, input);
+}
+
+/**
+ * ใส่ฟิลด์ของสลิป (ใช้กันนำเข้าซ้ำ) เฉพาะเมื่อมีค่าที่ถูกต้อง
+ * รายการที่พิมพ์เองจึงหน้าตาเหมือนเดิมทุกอย่าง ทั้งในเครื่อง ไฟล์สำรอง และ Firestore
+ */
+export function withSlip(tx, source) {
+  if (validSlipRef(source?.slipRef)) tx.slipRef = source.slipRef;
+  if (validSlipHash(source?.slipHash)) tx.slipHash = source.slipHash;
+  return tx;
+}
+
+/** "004:012345678901ABC00001" — รหัสธนาคาร : เลขอ้างอิงจาก QR ของสลิป (ตรงกับกฎ Firestore) */
+export function validSlipRef(value) {
+  return typeof value === 'string' && /^[0-9]{3}:[A-Za-z0-9]{6,40}$/.test(value);
+}
+
+/** SHA-256 ของไฟล์รูปสลิป เป็นเลขฐานสิบหก 64 ตัว */
+export function validSlipHash(value) {
+  return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
 }
 
 export function normalizeAmount(value) {

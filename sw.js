@@ -1,7 +1,11 @@
 // service worker แบบเรียบง่าย — แคชไฟล์ของแอปไว้ให้เปิดได้ตอนออฟไลน์
 // ข้อมูลของผู้ใช้อยู่ใน localStorage ไม่ได้ผ่านที่นี่
 
-const CACHE = 'tet-v7';
+const CACHE = 'tet-v8';
+
+// ไฟล์ของตัวอ่านสลิป (ราว 5 MB) — แคชแยก ไม่ลบตอนอัปเดตแอป
+// ชื่อโฟลเดอร์มีเลขเวอร์ชัน ไฟล์จึงไม่เปลี่ยนที่เดิม ใช้แคชได้เลยไม่ต้องเช็กของใหม่
+const VENDOR_CACHE = 'tet-vendor-1';
 
 const ASSETS = [
   './',
@@ -38,6 +42,10 @@ const ASSETS = [
   './js/screens/year.js',
   './js/screens/settings.js',
   './js/screens/sort.js',
+  './js/screens/slips.js',
+  './js/slip-parse.js',
+  './js/slip-reader.js',
+  './js/duplicates.js',
   './js/screens/sync-ui.js',
   './js/firebase-config.js',
   './js/remote.js',
@@ -61,7 +69,9 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys
+        .filter((k) => k !== CACHE && k !== VENDOR_CACHE)
+        .map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });
@@ -87,6 +97,16 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (url.origin !== self.location.origin) return;
+
+  if (url.pathname.includes('/vendor/')) {
+    event.respondWith(
+      caches.open(VENDOR_CACHE).then((cache) => cache.match(request).then((hit) => hit ?? fetch(request).then((response) => {
+        if (response.ok) cache.put(request, response.clone());
+        return response;
+      }))),
+    );
+    return;
+  }
 
   // หน้าเว็บ: ลองเครือข่ายก่อนเพื่อให้ได้ของใหม่ ถ้าออฟไลน์ค่อยใช้แคช
   if (request.mode === 'navigate') {

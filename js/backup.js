@@ -1,7 +1,7 @@
 // นำเข้า / ส่งออกไฟล์สำรอง
 // ข้อมูลที่นำเข้าถือว่า "ไม่น่าเชื่อถือ" — ตรวจ schema, ชนิด และช่วงค่าให้ครบก่อนบันทึก
 
-import { GROUP_CODES, MAX_AMOUNT, MAX_NAME, isGroupCode, newId } from './model.js';
+import { GROUP_CODES, MAX_AMOUNT, MAX_NAME, isGroupCode, newId, withSlip } from './model.js';
 import { isValidISODate, todayISO } from './format.js';
 
 export const SCHEMA_VERSION = 1;
@@ -133,7 +133,7 @@ export function sanitizeTransaction(item) {
   const createdAt = safeStamp(item.createdAt);
   const updatedAt = safeStamp(item.updatedAt, createdAt);
 
-  return {
+  return withSlip({
     id,
     kind: expectedKind,
     name,
@@ -144,7 +144,7 @@ export function sanitizeTransaction(item) {
     createdAt,
     updatedAt,
     deleted: item.deleted === true,
-  };
+  }, item);
 }
 
 function safeStamp(value, fallback = Date.now()) {

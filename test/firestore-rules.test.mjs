@@ -110,6 +110,20 @@ test('มูลค่าติดลบหรือเกินช่วง เ�
   await assertSucceeds(setDoc(txRef(db), validTx({ amount: null })));
 });
 
+test('ฟิลด์ของสลิป: รูปแบบถูกต้องเท่านั้น', async () => {
+  const db = ownerDb();
+  const hash = 'a'.repeat(64);
+  await assertSucceeds(setDoc(txRef(db), validTx({ slipRef: '004:012345678901ABC00001', slipHash: hash })));
+  await assertSucceeds(setDoc(txRef(db), validTx({ slipRef: null, slipHash: null })));
+  await assertSucceeds(setDoc(txRef(db), validTx({ slipHash: hash })));
+  await assertFails(setDoc(txRef(db), validTx({ slipRef: 'KBANK:123456' })));
+  await assertFails(setDoc(txRef(db), validTx({ slipRef: '004:' + 'x'.repeat(41) })));
+  await assertFails(setDoc(txRef(db), validTx({ slipRef: '004:<script>' })));
+  await assertFails(setDoc(txRef(db), validTx({ slipHash: 'A'.repeat(64) })));
+  await assertFails(setDoc(txRef(db), validTx({ slipHash: 123 })));
+  await assertFails(setDoc(txRef(db), validTx({ slipImage: 'data:image/png;base64,...' })));
+});
+
 test('กลุ่มรายการที่ไม่รู้จัก เขียนไม่ได้', async () => {
   const db = ownerDb();
   await assertFails(setDoc(txRef(db), validTx({ group: 'XX' })));

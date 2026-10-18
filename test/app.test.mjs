@@ -101,3 +101,22 @@ test('untypedGroups: groups by name and side, biggest first', async () => {
   ]);
   assert.equal(store.untypedCount, 5);
 });
+
+test('duplicates: amount tolerance, ±1 day, side, and differing categories', async () => {
+  const { amountsClose, findSimilar, findImported } = await import('../js/duplicates.js');
+  assert.equal(amountsClose(60, 59), true);
+  assert.equal(amountsClose(1000, 1010), true);   // 5% แต่ไม่เกิน 10 บาท
+  assert.equal(amountsClose(1000, 1011), false);
+  assert.equal(amountsClose(30, 31.6), false);    // 5% ของ 31.6 = 1.58 < 1.6
+  const slipTx = { id: 's', kind: 'expense', amount: 59, date: '2026-10-14', type: null, slipRef: '004:ABCDEF123', deleted: false };
+  const manual = { id: 'm', kind: 'expense', amount: 60, date: '2026-10-15', type: 'ค่าอาหาร', deleted: false };
+  const all = [slipTx, manual];
+  assert.deepEqual(findSimilar(all, { kind: 'expense', amount: 60, date: '2026-10-15' }, 'slip').map((t) => t.id), ['s']);
+  assert.deepEqual(findSimilar(all, { kind: 'expense', amount: 59, date: '2026-10-14' }, 'manual').map((t) => t.id), ['m']);
+  assert.equal(findSimilar(all, { kind: 'expense', amount: 60, date: '2026-10-17' }, 'slip').length, 0);   // ห่าง 3 วัน
+  assert.equal(findSimilar(all, { kind: 'income', amount: 60, date: '2026-10-15' }, 'slip').length, 0);    // คนละฝั่ง
+  assert.equal(findSimilar(all, { kind: 'expense', amount: 59, date: '2026-10-14', type: 'ค่าเดินทาง' }, 'manual').length, 0);
+  assert.equal(findSimilar(all, { kind: 'expense', amount: 15, date: '2026-10-14' }, 'manual').length, 0); // ยอดเล็กไม่เตือน
+  assert.equal(findImported(all, { ref: '004:ABCDEF123' })?.id, 's');
+  assert.equal(findImported(all, { ref: '004:OTHER1234', hash: null }), null);
+});

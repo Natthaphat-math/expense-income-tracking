@@ -6,6 +6,7 @@
 // - ใช้ข้อมูลตัวอย่าง (tools/demo-data.js) ไม่แตะข้อมูลจริงหรือ Firestore
 // - ปิดการซิงก์ และไม่ลงทะเบียน service worker (กรอบของพรีวิวไม่อนุญาต)
 // - ปุ่มส่งออกไฟล์บอกว่าใช้ในพรีวิวไม่ได้ แทนที่จะกดแล้วเงียบ
+// - ตัวอ่านสลิปเป็นตัวจำลอง (tools/preview-slip-reader.js) ให้ลองขั้นตอนตรวจและกันซ้ำได้
 // - รวม JS/CSS ทั้งหมดไว้ในไฟล์เดียว เพราะพรีวิวโหลดไฟล์จากที่อื่นไม่ได้
 // ไฟล์ที่ได้ห้าม commit (อยู่ใน .gitignore) และห้ามวางบน GitHub Pages
 // เพราะ Pages ใช้ origin เดียวกับแอปจริง
@@ -31,6 +32,10 @@ const PATCHES = {
 const patchPlugin = {
   name: 'preview-patches',
   setup(build) {
+    // ตัวอ่านสลิปจริงโหลดไฟล์จาก vendor/ ซึ่งพรีวิวไฟล์เดียวไม่มี — ใช้ตัวจำลองแทน
+    build.onResolve({ filter: /slip-reader\.js$/ }, () => ({
+      path: path.join(ROOT, 'tools/preview-slip-reader.js'),
+    }));
     build.onLoad({ filter: /\.js$/ }, (args) => {
       const rel = path.relative(ROOT, args.path).split(path.sep).join('/');
       const patches = PATCHES[rel];

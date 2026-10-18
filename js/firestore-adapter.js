@@ -6,6 +6,7 @@
 // ที่อยู่ข้อมูล: users/{uid}/transactions/{id} และ users/{uid}/meta/settings
 
 import { loadFirebase } from './remote.js';
+import { validSlipRef, validSlipHash } from './model.js';
 
 /** ฟิลด์ที่กฎใน Firestore ยอมรับ — ส่งเกินไปกฎจะปฏิเสธทั้งเอกสาร */
 const TX_FIELDS = ['id', 'kind', 'name', 'amount', 'type', 'group', 'date', 'createdAt', 'updatedAt', 'deleted'];
@@ -20,6 +21,9 @@ export function toFirestoreDoc(tx) {
   doc.createdAt = Math.round(Number(tx.createdAt) || Date.now());
   doc.updatedAt = Math.round(Number(tx.updatedAt) || Date.now());
   doc.deleted = tx.deleted === true;
+  // ฟิลด์ของสลิปส่งเฉพาะเมื่อมีค่า — รายการที่พิมพ์เองหน้าตาเหมือนเดิมทุกอย่าง
+  if (validSlipRef(tx.slipRef)) doc.slipRef = tx.slipRef;
+  if (validSlipHash(tx.slipHash)) doc.slipHash = tx.slipHash;
   return doc;
 }
 

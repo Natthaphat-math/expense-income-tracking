@@ -1510,3 +1510,64 @@ p.sync-error {
 .sort-more { display: flex; gap: 8px; }
 .sort-more .btn:first-child { flex: 1; }
 .sort-done { margin-top: 18px; }
+
+/* ---------------------------------------------------------- นำเข้าสลิป */
+.log-slip { display: inline-flex; align-items: center; gap: 4px; }
+.slip-intro { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.slip-intro .btn-block { display: inline-flex; align-items: center; justify-content: center; gap: 8px; margin-top: 14px; }
+.slip-intro .footnote { margin-top: 12px; }
+.slip-status { margin: 0 4px 10px; font-size: 14.5px; color: var(--accent); font-weight: 600; }
+.slip-list { display: grid; gap: 10px; }
+@media (min-width: 720px) { .slip-list { grid-template-columns: 1fr 1fr; align-items: start; } }
+.slip-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 14px 14px 6px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  border: 2px solid transparent;
+}
+.slip-card-on { border-color: var(--accent); }
+.slip-head { display: flex; align-items: center; gap: 8px; }
+.slip-check-button { width: var(--tap); height: var(--tap); flex: none; display: inline-grid; place-items: center; border-radius: 50%; }
+.slip-check {
+  width: 26px; height: 26px;
+  display: inline-grid; place-items: center;
+  border-radius: 50%;
+  border: 2px solid var(--outline);
+  color: var(--on-accent);
+}
+.slip-check-on { background: var(--accent); border-color: var(--accent); }
+.slip-check-wait { margin: 0 9px; border-style: dashed; }
+.slip-thumb {
+  width: 52px; height: 64px; flex: none;
+  border-radius: 10px; overflow: hidden;
+  background: var(--surface-sunk);
+}
+.slip-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+.slip-sum { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.slip-name { font-weight: 600; overflow-wrap: anywhere; }
+.slip-meta { font-size: 13.5px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.slip-flag {
+  margin-left: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.slip-flag-info { background: var(--surface-sunk); color: var(--ink-soft); }
+.slip-flag-warn { background: var(--warn-soft); color: var(--warn); border: 1px solid var(--warn-line); }
+.slip-flag-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.slip-flag-note { font-size: 13px; color: var(--ink-soft); }
+.slip-fields { margin-left: 8px; display: flex; flex-direction: column; gap: 8px; }
+.slip-fields .seg-kind { margin-bottom: 0; }
+.slip-fields .seg-kind .seg-item { min-height: var(--tap); }
+.slip-row { display: flex; gap: 8px; align-items: stretch; }
+.slip-amount { flex: 1; min-width: 0; }
+.slip-chip { flex: none; }
+.slip-more { display: inline-flex; align-items: center; justify-content: center; gap: 6px; margin-top: 12px; }
+.slip-full { display: block; width: 100%; height: auto; border-radius: var(--radius-sm); }
+body[data-screen="slips"] .app-root { padding-bottom: calc(var(--safe-bottom) + 96px); }
+.log-actions .btn[disabled] { opacity: .5; }
