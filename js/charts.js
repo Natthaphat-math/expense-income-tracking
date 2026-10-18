@@ -356,7 +356,16 @@ export function lineChart(points, { label = 'ยอดคงเหลือร�
 
 function drawLine(width, height, points, label) {
   const values = points.map((p) => p.balance);
-  const { lo, hi, ticks } = niceScale(Math.min(0, ...values), Math.max(0, ...values), 3);
+  // ไม่บังคับให้แกนเริ่มที่ 0 — ยอดคงเหลือหลักหมื่นที่ขยับทีละร้อยจะเห็นเป็นเส้นแบนราบ
+  // ถ้าทั้งเดือนไม่ขยับเลย ขยายช่วงออกเล็กน้อยเพื่อไม่ให้หารด้วยศูนย์
+  let vMin = Math.min(...values);
+  let vMax = Math.max(...values);
+  if (vMax - vMin < 1) {
+    const pad = Math.max(100, Math.abs(vMax) * 0.05);
+    vMin -= pad;
+    vMax += pad;
+  }
+  const { lo, hi, ticks } = niceScale(vMin, vMax, 3);
   const tickTexts = ticks.map(tickLabel);
   const padLeft = Math.ceil(Math.max(...tickTexts.map((t) => textWidth(t, AXIS_FONT_PX)))) + 10;
   const padRight = 8;
@@ -384,7 +393,8 @@ function drawLine(width, height, points, label) {
   });
 
   const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(p.day).toFixed(1)} ${y(p.balance).toFixed(1)}`).join(' ');
-  const base = y(Math.max(lo, 0));
+  // พื้นใต้เส้นลงไปถึงขอบล่างของกราฟ (ไม่ใช่เส้น 0 ซึ่งอาจอยู่นอกกรอบ)
+  const base = y(lo);
   svg.appendChild(svgEl('path', {
     d: `${path} L ${x(last).toFixed(1)} ${base.toFixed(1)} L ${x(first).toFixed(1)} ${base.toFixed(1)} Z`,
     class: 'line-area',

@@ -86,7 +86,13 @@ const result = await esbuild.build({
 });
 
 const js = result.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
-const css = fs.readFileSync(path.join(ROOT, 'styles.css'), 'utf8') + PREVIEW_CSS;
+// ฟอนต์ฝังเป็น data URI — พรีวิวโหลดไฟล์ข้าง ๆ ไม่ได้
+const css = fs.readFileSync(path.join(ROOT, 'styles.css'), 'utf8')
+  .replace(/url\("\.\/(fonts\/[a-z0-9-]+\.woff2)"\)/g, (_, file) => {
+    const data = fs.readFileSync(path.join(ROOT, file)).toString('base64');
+    return `url("data:font/woff2;base64,${data}")`;
+  }) + PREVIEW_CSS;
+if (css.includes('./fonts/')) throw new Error('font url not inlined');
 
 // หน้าพรีวิวถูกห่อด้วย <html><head><body> ตอนเผยแพร่ จึงเขียนแค่เนื้อหา
 const html = `<title>รายรับรายจ่าย</title>

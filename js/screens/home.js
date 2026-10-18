@@ -1,131 +1,221 @@
-// หน้าหลัก — รายการของวันนี้ และยอดรวมวันนี้
+// หน้าวัน — ยอดที่ใช้ไป กราฟสัปดาห์ ปุ่มบันทึกด่วน และรายการของวันนั้น
 
-import { el, replace } from '../dom.js';
+import { el } from '../dom.js';
 import {
-  formatMoney, longDate, todayISO,
-  weekDays, weekdayShort, weekRangeLabel,
+  formatMoney, formatNumber, longDate, todayISO, relativeDate,
+  weekDays, weekdayShort, weekRangeLabel, fromISODate,
 } from '../format.js';
-import { groupedBarChart } from '../charts.js';
-import { summarize, groupLabel } from '../model.js';
-import { confirmDialog, toast } from '../ui.js';
+import {
+  summarize, activeCategories, groupForCategory, groupKind, GROUPS,
+} from '../model.js';
+import { confirmDialog, toast, openPicker, pageHeader } from '../ui.js';
+import { icon, categoryTile } from '../icons.js';
+
+const WEEKDAY_LONG = new Intl.DateTimeFormat('th-TH-u-ca-gregory', { weekday: 'long' });
+
+/** คำทักตามช่วงเวลาของเครื่อง */
+function greeting(now = new Date()) {
+  const h = now.getHours();
+  if (h >= 5 && h < 12) return 'สวัสดีตอนเช้า';
+  if (h >= 12 && h < 17) return 'สวัสดีตอนบ่าย';
+  if (h >= 17 && h < 21) return 'สวัสดีตอนเย็น';
+  return 'สวัสดีตอนค่ำ';
+}
 
 export function renderDay(app) {
-  // เปิดจากเมนู "วันนี้" ให้เด้งกลับมาวันนี้เสมอ
-  if (app.current.options?.reset) app.state.dayISO = todayISO();
+  // เปิดจากแท็บ "วัน" ให้เด้งกลับมาวันนี้ — ครั้งเดียว ไม่งั้นแตะแท่งวันอื่นแล้วจะเด้งกลับทุกครั้ง
+  if (app.current.options?.reset) {
+    app.state.dayISO = todayISO();
+    app.current.options.reset = false;
+  }
 
   const today = todayISO();
   const day = app.state.dayISO ?? today;
   const isToday = day === today;
   const rows = app.store.byDate(day);
-  const { income, expense } = summarize(rows);
-  // วันอื่นไม่ต้องเติมวันที่ต่อท้าย เพราะหัวข้อด้านบนบอกวันไว้แล้ว
-  // (เติมแล้วป้ายยาวจนตัดบรรทัดบนจอ 390pt)
-  const suffix = isToday ? ' วันนี้' : '';
 
   return el('div', { class: 'screen screen-day' },
-    el('header', { class: 'day-page-head' },
-      el('p', { class: 'home-date' }, longDate(day)),
-      isToday
-        ? null
-        : el('button', {
-            class: 'chip chip-on', type: 'button',
+    pageHeader({
+      kicker: longDate(day),
+      title: isToday ? greeting() : relativeDate(day),
+      actions: isToday
+        ? []
+        : [el('button', {
+            class: 'btn btn-small btn-tonal', type: 'button',
             onclick: () => { app.state.dayISO = today; app.render(); },
-          }, 'กลับไปวันนี้'),
-      el('div', { class: 'today-totals' },
-        totalCard(`รายรับ${suffix}`, income, 'income'),
-        totalCard(`รายจ่าย${suffix}`, expense, 'expense'),
-      ),
-    ),
+          }, 'กลับไปวันนี้')],
+    }),
+    summaryCard(app, day, rows),
     app.backupBanner(),
-    weekCard(app, day),
-    el('main', { class: 'home-list' },
+    quickAdd(app, day),
+    el('section', { class: 'day-list' },
+      el('div', { class: 'section-head' },
+        el('h2', { class: 'section-title' }, isToday ? 'รายการวันนี้' : 'รายการของวันนั้น'),
+        rows.length > 0 ? el('span', { class: 'section-meta' }, `${formatNumber(rows.length)} รายการ`) : null,
+      ),
       rows.length === 0
         ? emptyState(isToday)
-        : el('ul', { class: 'tx-list' }, rows.map((tx) => transactionRow(app, tx, { compact: true }))),
+        : el('ul', { class: 'tx-list' }, rows.map((tx) => transactionRow(app, tx))),
     ),
   );
 }
 
-/** กราฟรายรับ vs รายจ่ายของสัปดาห์นี้ เริ่มวันจันทร์ */
-function weekCard(app, day) {
-  const days = weekDays(day);
+/**
+ * การ์ดสรุปด้านบน: ใช้ไปเท่าไร รับเท่าไร และแท่งรายจ่าย 7 วันของสัปดาห์ (เริ่มวันจันทร์)
+ * แตะแท่งของวันไหนเพื่อเปลี่ยนไปดูวันนั้น
+ */
+function summaryCard(app, day, rows) {
   const today = todayISO();
-
-  const items = days.map((date) => {
-    const { income, expense } = summarize(app.store.byDate(date));
-    return {
-      key: date,
-      label: weekdayShort(date),
-      income,
-      expense,
-      day: Number(date.slice(8, 10)),
-    };
+  const isToday = day === today;
+  const { income, expense } = summarize(rows);
+  const days = weekDays(day).map((date) => {
+    const list = app.store.byDate(date);
+    const t = summarize(list);
+    return { date, income: t.income, expense: t.expense, logged: list.length > 0 };
   });
+  const max = Math.max(1, ...days.map((d) => d.expense));
+  const week = days.reduce((acc, d) => ({
+    income: acc.income + d.income, expense: acc.expense + d.expense,
+  }), { income: 0, expense: 0 });
+  const elapsed = days.filter((d) => d.date <= today);
+  const logged = elapsed.filter((d) => d.logged).length;
 
-  const totals = items.reduce(
-    (acc, d) => ({ income: acc.income + d.income, expense: acc.expense + d.expense }),
-    { income: 0, expense: 0 },
-  );
-  const logged = items.filter((d) => d.key <= today && (d.income > 0 || d.expense > 0)).length;
-  const elapsed = items.filter((d) => d.key <= today).length;
-
-  return el('section', { class: 'card' },
-    el('div', { class: 'card-head' },
-      el('h2', { class: 'card-title' }, 'สัปดาห์นี้'),
-      el('span', { class: 'week-range' }, weekRangeLabel(day)),
+  return el('section', { class: 'hero-card', 'aria-label': 'สรุปของวัน' },
+    el('div', { class: 'hero-top' },
+      el('div', { class: 'hero-main' },
+        el('p', { class: 'hero-label' }, isToday ? 'ใช้ไปวันนี้' : 'ใช้ไปวันนั้น'),
+        el('p', { class: 'hero-amount' },
+          formatNumber(expense),
+          el('span', { class: 'hero-unit' }, ' บาท'),
+        ),
+      ),
+      income > 0
+        ? el('p', { class: 'hero-income' },
+            el('span', { class: 'hero-income-label' }, 'รับ'),
+            ` +${formatNumber(income)} บาท`)
+        : null,
     ),
-    groupedBarChart(items, {
-      highlight: day,
-      onSelect: (item) => { app.state.dayISO = item.key; app.render(); },
-    }),
-    el('div', { class: 'week-summary' },
-      el('span', {}, `รายรับ ${formatMoney(totals.income)}`),
-      el('span', {}, `รายจ่าย ${formatMoney(totals.expense)}`),
+    el('div', { class: 'week', role: 'group', 'aria-label': `รายจ่ายสัปดาห์ ${weekRangeLabel(day)}` },
+      days.map((d) => {
+        const selected = d.date === day;
+        return el('button', {
+          class: [
+            'week-day',
+            selected ? 'week-day-on' : '',
+            d.date === today ? 'week-day-today' : '',
+            d.date > today ? 'week-day-future' : '',
+          ].join(' ').replace(/\s+/g, ' ').trim(),
+          type: 'button',
+          'aria-pressed': selected ? 'true' : 'false',
+          'aria-label': `${WEEKDAY_LONG.format(fromISODate(d.date))} ${relativeDate(d.date)} ใช้ไป ${formatMoney(d.expense)}`
+            + (d.income > 0 ? ` รับ ${formatMoney(d.income)}` : ''),
+          onclick: () => { app.state.dayISO = d.date; app.render(); },
+        },
+          el('span', { class: 'week-track', 'aria-hidden': 'true' },
+            el('span', {
+              class: 'week-bar',
+              // วันที่ไม่มีรายจ่ายยังเหลือแท่งเตี้ย ๆ ให้เห็นว่ามีวันนั้นอยู่
+              style: { height: `${Math.max(8, Math.round((d.expense / max) * 100))}%` },
+            }),
+          ),
+          el('span', { class: 'week-label', 'aria-hidden': 'true' }, weekdayShort(d.date)),
+        );
+      }),
     ),
-    elapsed > 0 && logged < elapsed
-      ? el('p', { class: 'hint' }, `บันทึกไปแล้ว ${logged} จาก ${elapsed} วันที่ผ่านมา`)
+    el('p', { class: 'hero-foot' },
+      `สัปดาห์นี้ใช้ไป ${formatMoney(week.expense)}`,
+      week.income > 0 ? ` · รับ ${formatMoney(week.income)}` : null,
+    ),
+    elapsed.length > 0 && logged < elapsed.length
+      ? el('p', { class: 'hero-note' }, `บันทึกไปแล้ว ${logged} จาก ${elapsed.length} วันที่ผ่านมา`)
       : null,
-    el('p', { class: 'hint' }, 'แตะแท่งของวันไหนเพื่อดูรายการของวันนั้น'),
   );
 }
 
-function totalCard(label, value, kind) {
-  return el('div', { class: `total-card total-${kind}` },
-    el('span', { class: 'total-label' }, label),
-    el('strong', { class: 'total-value' }, formatMoney(value)),
+/** ปุ่มลัดของรายการที่บันทึกบ่อย — แตะแล้วเปิดฟอร์มที่กรอกไว้ให้ ตรวจแล้วกดบันทึก */
+function quickAdd(app, day) {
+  const items = app.store.frequentItems(8);
+  if (items.length === 0) return null;
+  return el('section', { class: 'quick' },
+    el('h2', { class: 'section-title' }, 'บันทึกด่วน'),
+    el('div', { class: 'quick-row' }, items.map((item) => el('button', {
+      class: 'quick-chip', type: 'button',
+      'aria-label': `บันทึก ${item.name}${item.amount !== null ? ` ${formatMoney(item.amount)}` : ''}`,
+      onclick: () => app.openLog({
+        kind: item.kind,
+        date: day,
+        prefill: { name: item.name, amount: item.amount, type: item.type },
+      }),
+    },
+      categoryTile(item.type, item.group, { size: 'sm' }),
+      el('span', { class: 'quick-name' }, item.name),
+      item.amount !== null
+        ? el('span', { class: `quick-amount ${item.kind === 'income' ? 'is-income' : ''}` }, formatNumber(item.amount))
+        : null,
+    ))),
   );
 }
 
 function emptyState(isToday) {
   return el('div', { class: 'empty' },
-    el('div', { class: 'empty-mark', 'aria-hidden': 'true' }, '☀'),
-    el('p', { class: 'empty-title' }, isToday ? 'วันนี้ยังไม่มีรายการ' : 'วันนี้ไม่มีรายการที่บันทึกไว้'),
-    el('p', { class: 'empty-hint' }, 'กดปุ่ม จ่าย หรือ รับ ด้านล่างเพื่อเริ่มบันทึก'),
+    el('span', { class: 'empty-mark', 'aria-hidden': 'true' }, icon('list', { size: 28 })),
+    el('p', { class: 'empty-title' }, isToday ? 'วันนี้ยังไม่มีรายการ' : 'วันนั้นไม่มีรายการที่บันทึกไว้'),
+    el('p', { class: 'empty-hint' }, 'แตะปุ่ม + ด้านล่างเพื่อเริ่มบันทึก'),
     el('p', { class: 'empty-hint' }, 'พิมพ์สั้น ๆ ได้เลย เช่น “ก๋วยเตี๋ยว 20 บาท อาหาร”'),
   );
 }
 
-/** แถวรายการหนึ่งรายการ — แตะเพื่อแก้ไขหรือลบ */
+/**
+ * "08:30" — เฉพาะรายการที่บันทึกในวันนั้นจริง
+ * รายการนำเข้าหรือที่ลงย้อนหลังไม่มีเวลาที่มีความหมาย จึงไม่แสดง
+ */
+function timeOf(tx) {
+  const created = tx.createdAt;
+  if (!Number.isFinite(created) || created % 60000 === 0) return null;
+  const d = new Date(created);
+  const local = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  if (local !== tx.date) return null;
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 /**
  * แถวรายการหนึ่งรายการ
  * @param {object} options
- * @param {boolean} options.showDate     แสดงวันที่ในบรรทัดรอง
- * @param {boolean} options.compact      แถวเตี้ยลง เพื่อให้เห็นรายการได้มากขึ้น
+ * @param {boolean} options.compact      แถวเตี้ย ไอคอนเล็ก สำหรับรายการยาว ๆ ของหน้าเดือน
  * @param {boolean} options.selectable   อยู่ในโหมดเลือกหลายรายการ
  * @param {boolean} options.selected     ถูกเลือกอยู่หรือไม่
  * @param {Function} options.onToggle    เรียกเมื่อแตะในโหมดเลือก
+ * @param {Function} options.onChanged   เรียกหลังตั้งประเภทจากแถว (สำหรับหน้าที่ไม่วาดใหม่เองเมื่อข้อมูลเปลี่ยน)
  */
 export function transactionRow(app, tx, {
-  showDate = false, compact = false, selectable = false, selected = false, onToggle = null,
+  compact = false, selectable = false, selected = false, onToggle = null, onChanged = null,
 } = {}) {
   const isIncome = tx.kind === 'income';
   const sign = isIncome ? '+' : '−';
+  const untyped = !tx.type;
+  const time = timeOf(tx);
 
   const classes = ['tx-row', `tx-${isIncome ? 'income' : 'expense'}`];
   if (compact) classes.push('tx-row-compact');
   if (selectable && selected) classes.push('tx-row-selected');
+  // ประเภทว่าง: วงกลมเป็นปุ่มแยก แตะแล้วเลือกประเภทได้ทันทีโดยไม่ต้องเปิดฟอร์ม
+  const tileButton = untyped && !selectable;
+  if (tileButton) classes.push('tx-row-untyped');
+
+  // หน้าเดือนมีรายการไม่ระบุประเภทเรียงกันยาว คำชวนแตะซ้ำทุกแถวจะรก จึงบอกแค่สถานะ
+  const subtitle = untyped
+    ? el('span', { class: `tx-sub ${tileButton && !compact ? 'tx-sub-action' : ''}` },
+        tileButton && !compact ? 'แตะ ? เพื่อเลือกประเภท' : 'ไม่ระบุประเภท')
+    : el('span', { class: 'tx-sub' }, time ? `${tx.type} · ${time}` : tx.type);
 
   return el('li', { class: classes.join(' ') },
+    tileButton
+      ? el('button', {
+          class: 'tx-tile-button', type: 'button',
+          'aria-label': `เลือกประเภทให้ “${tx.name}”`,
+          onclick: () => pickTypeFor(app, tx, onChanged),
+        }, categoryTile(null, tx.group, { size: compact ? 'sm' : 'md' }))
+      : null,
     el('button', {
       class: 'tx-button', type: 'button',
       // ในโหมดเลือก การแตะคือการติ๊ก ไม่ใช่การเปิดหน้าแก้ไข
@@ -133,25 +223,38 @@ export function transactionRow(app, tx, {
       onclick: () => (selectable ? onToggle?.(tx) : openRowActions(app, tx)),
     },
       selectable
-        ? el('span', {
-            class: `tx-check ${selected ? 'tx-check-on' : ''}`, 'aria-hidden': 'true',
-          }, selected ? '✓' : '')
+        ? el('span', { class: `tx-check ${selected ? 'tx-check-on' : ''}`, 'aria-hidden': 'true' },
+            selected ? icon('check', { size: 16 }) : null)
         : null,
+      tileButton ? null : categoryTile(tx.type, tx.group, { size: compact ? 'sm' : 'md' }),
       el('span', { class: 'tx-main' },
         el('span', { class: 'tx-name' }, tx.name),
-        el('span', { class: 'tx-meta' },
-          el('span', { class: 'tx-kind-tag' }, isIncome ? 'รับ' : 'จ่าย'),
-          tx.type
-            ? el('span', { class: 'tx-type' }, tx.type)
-            : el('span', { class: 'tx-type tx-type-none' }, groupLabel(tx.group)),
-          showDate ? el('span', { class: 'tx-date' }, tx.date) : null,
-        ),
+        subtitle,
       ),
       tx.amount === null
         ? el('span', { class: 'tx-amount tx-amount-missing' }, 'ยังไม่ระบุมูลค่า')
-        : el('span', { class: 'tx-amount' }, `${sign}${formatMoney(tx.amount)}`),
+        : el('span', { class: 'tx-amount' },
+            el('span', { class: 'visually-hidden' }, isIncome ? 'รับ ' : 'จ่าย '),
+            `${sign}${formatNumber(tx.amount)}`),
     ),
   );
+}
+
+/** เลือกประเภทจากแถวรายการโดยตรง */
+function pickTypeFor(app, tx, onChanged) {
+  const cats = activeCategories(app.store.settings, { kind: tx.kind });
+  openPicker({
+    title: `ประเภทของ “${tx.name}”`,
+    items: cats.map((c) => ({ label: c.name, value: c.name, group: c.group, aliases: c.aliases, tile: true })),
+    searchPlaceholder: 'ค้นหาประเภท',
+    groupLabels: Object.fromEntries(GROUPS.map((g) => [g.code, g.label])),
+    onSelect: async (name) => {
+      const group = groupForCategory(app.store.settings, name, tx.kind);
+      await app.store.save({ ...tx, type: name, group, kind: groupKind(group) });
+      toast(`ตั้งประเภท “${name}” แล้ว`);
+      onChanged?.();
+    },
+  });
 }
 
 function openRowActions(app, tx) {

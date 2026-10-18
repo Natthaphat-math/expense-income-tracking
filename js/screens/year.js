@@ -6,7 +6,7 @@ import {
   sumByType, budgetFor, activeCategories, BUDGET_GROUPS, groupLabel,
 } from '../model.js';
 import { groupedBarChart, donutChart, progressBar } from '../charts.js';
-import { openPicker, notePrompt } from '../ui.js';
+import { openPicker, notePrompt, pageHeader } from '../ui.js';
 
 const BREAKDOWN_TABS = [
   { id: 'expense', label: 'รายจ่าย', groups: ['DE', 'SD', 'IV'] },
@@ -33,6 +33,16 @@ export function renderYear(app, options = {}) {
   function build() {
     const summary = app.store.yearSummary(state.year);
     return [
+      pageHeader({
+        kicker: 'ปี',
+        title: String(state.year),
+        stepper: {
+          prevLabel: 'ปีก่อนหน้า',
+          nextLabel: 'ปีถัดไป',
+          onPrev: () => { state.year -= 1; rerender(); },
+          onNext: () => { state.year += 1; rerender(); },
+        },
+      }),
       el('div', { class: 'year-body' },
         el('div', { class: 'col col-primary' },
           summaryCards(summary),
@@ -146,7 +156,7 @@ export function renderYear(app, options = {}) {
       el('div', { class: 'card-head' },
         el('h2', { class: 'card-title' }, 'ดูรายเดือน'),
         el('button', {
-          class: 'chip chip-on', type: 'button',
+          class: 'chip chip-tonal', type: 'button', 'aria-label': `เดือนที่ดู ${monthName(state.selectedMonth)} — แตะเพื่อเปลี่ยน`,
           onclick: () => openPicker({
             title: 'เลือกเดือน',
             items: Array.from({ length: 12 }, (_, i) => ({ label: monthName(i + 1), value: i + 1 })),

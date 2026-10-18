@@ -1,7 +1,7 @@
 // service worker แบบเรียบง่าย — แคชไฟล์ของแอปไว้ให้เปิดได้ตอนออฟไลน์
 // ข้อมูลของผู้ใช้อยู่ใน localStorage ไม่ได้ผ่านที่นี่
 
-const CACHE = 'tet-v4';
+const CACHE = 'tet-v5';
 
 const ASSETS = [
   './',
@@ -12,6 +12,14 @@ const ASSETS = [
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
   './icons/apple-touch-icon.png',
+  './fonts/plex-thai-looped-thai-400.woff2',
+  './fonts/plex-thai-looped-thai-500.woff2',
+  './fonts/plex-thai-looped-thai-600.woff2',
+  './fonts/plex-thai-looped-thai-700.woff2',
+  './fonts/plex-thai-looped-latin-400.woff2',
+  './fonts/plex-thai-looped-latin-500.woff2',
+  './fonts/plex-thai-looped-latin-600.woff2',
+  './fonts/plex-thai-looped-latin-700.woff2',
   './js/main.js',
   './js/dom.js',
   './js/format.js',
@@ -21,6 +29,7 @@ const ASSETS = [
   './js/store.js',
   './js/charts.js',
   './js/ui.js',
+  './js/icons.js',
   './js/backup.js',
   './js/screens/home.js',
   './js/screens/log.js',

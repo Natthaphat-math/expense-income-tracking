@@ -2,16 +2,32 @@
 
 import { el, replace } from '../dom.js';
 import {
-  formatMoney, formatNumber, monthTitle, longDate,
-  daysInMonth, parseMonthKey, monthKey as makeMonthKey, todayISO, monthName,
+  formatMoney, formatNumber, monthTitle, longDate, shiftMonthKey,
+  daysInMonth, parseMonthKey, todayISO, monthName, monthNameShort, weekdayShort, fromISODate,
 } from '../format.js';
 import {
   summarize, sumByType, groupLabel, budgetFor, activeCategories,
   BUDGET_GROUPS, targetWord, groupForCategory, groupKind, GROUPS, UNCATEGORISED,
 } from '../model.js';
 import { donutChart, lineChart, progressBar } from '../charts.js';
-import { openPicker, promptNumber, openSheet, toast, confirmDialog, notePrompt } from '../ui.js';
+import {
+  openPicker, promptNumber, openSheet, toast, confirmDialog, notePrompt, pageHeader, openMonthPicker,
+} from '../ui.js';
 import { transactionRow } from './home.js';
+import { icon } from '../icons.js';
+
+/** แท็บของหน้าเดือน — แยกให้แต่ละเรื่องได้ทั้งจอ แทนการเลื่อนยาวผ่านทุกการ์ด */
+const VIEWS = [
+  { id: 'summary', label: 'สรุป' },
+  { id: 'list', label: 'รายการ' },
+  { id: 'budget', label: 'งบ' },
+];
+
+/** "ส. 17 ต.ค." — สั้นพอให้ยอดรวมของวันอยู่บรรทัดเดียวกันบนจอ 390pt */
+function dayHeading(iso) {
+  const date = fromISODate(iso);
+  return `${weekdayShort(iso)}. ${date.getDate()} ${monthNameShort(date.getMonth() + 1)}`;
+}
 
 const BREAKDOWN_TABS = [
   { id: 'expense', label: 'รายจ่าย', groups: ['DE', 'SD', 'IV'] },
@@ -24,8 +40,9 @@ export function renderMonth(app, options = {}) {
     // เดือนที่ดูอยู่เก็บไว้ที่ app.state เพราะปุ่มเปลี่ยนเดือนย้ายไปอยู่แถบล่างแล้ว
     key: options.monthKey ?? app.state.monthKey,
     tab: app.state.monthTab ?? 'expense',
+    view: app.state.monthView ?? 'summary',
     filterType: null,
-    open: app.state.monthSections ?? new Set(['budget']),
+    open: app.state.monthSections ?? new Set(['budget', 'income', 'savings']),
     selecting: false,
     selected: new Set(),
     openGaps: new Set(),
@@ -37,6 +54,7 @@ export function renderMonth(app, options = {}) {
     app.state.monthKey = state.key;
     app.state.monthSections = state.open;
     app.state.monthTab = state.tab;
+    app.state.monthView = state.view;
     replace(host, build());
   };
 
@@ -48,18 +66,43 @@ export function renderMonth(app, options = {}) {
       : summary.rows;
 
     return [
-      el('div', { class: 'month-body' },
-        el('div', { class: 'col col-primary' },
-          breakdownCard(summary),
-          totalsCard(summary),
-          ...targetSections(summary),
-          balanceSection(summary),
-        ),
-        el('div', { class: 'col col-secondary' },
-          listCard(summary, rows),
-        ),
-      ),
+      pageHeader({
+        kicker: 'เดือน',
+        title: monthTitle(state.key),
+        titleHint: 'แตะเพื่อเลือกเดือน',
+        onTitle: () => openMonthPicker({
+          value: state.key,
+          onSelect: (key) => goMonth(key),
+        }),
+        stepper: {
+          prevLabel: 'เดือนก่อนหน้า',
+          nextLabel: 'เดือนถัดไป',
+          onPrev: () => goMonth(shiftMonthKey(state.key, -1)),
+          onNext: () => goMonth(shiftMonthKey(state.key, 1)),
+        },
+      }),
+      el('div', { class: 'seg seg-full seg-views', role: 'group', 'aria-label': 'มุมมอง' },
+        VIEWS.map((v) => el('button', {
+          class: `seg-item ${v.id === state.view ? 'seg-item-on' : ''}`, type: 'button',
+          'aria-pressed': v.id === state.view ? 'true' : 'false',
+          onclick: () => { state.view = v.id; rerender(); },
+        }, v.label))),
+      state.view === 'summary'
+        ? el('div', { class: 'month-body' },
+            el('div', { class: 'col col-primary' }, totalsCard(summary), balanceSection(summary)),
+            el('div', { class: 'col col-secondary' }, breakdownCard(summary)),
+          )
+        : null,
+      state.view === 'list' ? listCard(summary, rows) : null,
+      state.view === 'budget' ? el('div', { class: 'month-targets' }, ...targetSections(summary)) : null,
     ];
+  }
+
+  function goMonth(key) {
+    state.key = key;
+    resetSelection();
+    rerender();
+    host.closest('.app-root')?.scrollTo?.(0, 0);
   }
 
   function breakdownCard(summary) {
@@ -76,7 +119,9 @@ export function renderMonth(app, options = {}) {
         title: `สัดส่วน${tab.label}ตามประเภท`,
         centerLabel: 'บาท',
         onSlice: (row) => {
+          // แตะชิ้นไหนก็ไปดูรายการของประเภทนั้น
           state.filterType = row.name === UNCATEGORISED ? '' : row.name;
+          state.view = 'list';
           rerender();
         },
       }),
@@ -94,7 +139,7 @@ export function renderMonth(app, options = {}) {
         },
           el('span', { class: 'total-label' }, 'ยอดเริ่มต้น'),
           el('span', { class: 'total-value' }, formatMoney(summary.opening)),
-          el('span', { class: 'total-edit-mark', 'aria-hidden': 'true' }, '✎'),
+          icon('pencil', { size: 16, cls: 'total-edit-mark' }),
         ),
         totalLine('ยอดคงเหลือ', summary.remaining, summary.remaining < 0 ? 'negative' : 'balance'),
       ),
@@ -160,7 +205,7 @@ export function renderMonth(app, options = {}) {
           el('strong', {}, title),
           subtitle ? el('span', { class: 'collapse-sub' }, subtitle) : null,
         ),
-        el('span', { class: `collapse-mark ${isOpen ? 'collapse-mark-open' : ''}`, 'aria-hidden': 'true' }, '⌄'),
+        icon('chevronDown', { cls: `collapse-mark ${isOpen ? 'collapse-mark-open' : ''}` }),
       ),
       isOpen ? el('div', { class: 'collapse-body' }, buildBody()) : null,
     );
@@ -379,7 +424,7 @@ export function renderMonth(app, options = {}) {
   }
 
   function balanceSection(summary) {
-    return collapsible('balance', 'ยอดคงเหลือรายวัน', '', () => {
+    const chart = (() => {
       const days = daysInMonth(state.key);
       const perDay = new Map();
       for (const tx of summary.rows) {
@@ -398,7 +443,11 @@ export function renderMonth(app, options = {}) {
         points.push({ day: d, balance: Math.round(running * 100) / 100, hasActivity: Boolean(row) });
       }
       return lineChart(points);
-    });
+    })();
+    return el('section', { class: 'card' },
+      el('h2', { class: 'card-title' }, 'ยอดคงเหลือรายวัน'),
+      chart,
+    );
   }
 
   function listCard(summary, rows) {
@@ -411,9 +460,9 @@ export function renderMonth(app, options = {}) {
     const days = listDays(byDay);
     const selectableIds = rows.map((t) => t.id);
 
-    return el('section', { class: 'card card-list' },
-      el('div', { class: 'card-head' },
-        el('h2', { class: 'card-title' }, 'รายการเดือนนี้'),
+    return el('section', { class: 'month-list' },
+      el('div', { class: 'section-head' },
+        el('h2', { class: 'section-title' }, 'รายการเดือนนี้'),
         el('div', { class: 'list-tools' },
           el('button', {
             class: `chip ${state.filterType !== null ? 'chip-on' : ''}`, type: 'button',
@@ -435,7 +484,10 @@ export function renderMonth(app, options = {}) {
       ),
 
       days.length === 0
-        ? el('p', { class: 'hint' }, 'ยังไม่มีรายการในเดือนนี้')
+        ? el('div', { class: 'empty empty-card' },
+            el('span', { class: 'empty-mark', 'aria-hidden': 'true' }, icon('list', { size: 28 })),
+            el('p', { class: 'empty-title' }, 'ยังไม่มีรายการในเดือนนี้'),
+          )
         : el('div', { class: 'day-groups' }, groupRuns(days, byDay).map((block) => {
             if (block.kind === 'day') return dayGroup(block.date, block.items);
             if (block.dates.length < 3 || state.openGaps.has(block.id)) {
@@ -465,8 +517,9 @@ export function renderMonth(app, options = {}) {
                 }
                 rerender();
               },
-            }, `${allPicked ? '✓ ' : ''}${longDate(date)}`)
-          : el('span', { class: 'day-name' }, longDate(date)),
+              'aria-label': `${allPicked ? 'ยกเลิกเลือก' : 'เลือก'}ทั้งวัน ${longDate(date)}`,
+            }, allPicked ? icon('check', { size: 16 }) : null, dayHeading(date))
+          : el('h3', { class: 'day-name', 'aria-label': longDate(date) }, dayHeading(date)),
         el('span', { class: 'day-total' },
           totals.income > 0 ? el('span', { class: 'day-in' }, `+${formatNumber(totals.income)}`) : null,
           totals.expense > 0 ? el('span', { class: 'day-out' }, `−${formatNumber(totals.expense)}`) : null,
@@ -474,6 +527,7 @@ export function renderMonth(app, options = {}) {
       ),
       el('ul', { class: 'tx-list' }, items.map((tx) => transactionRow(app, tx, {
         compact: true,
+        onChanged: rerender,
         selectable: state.selecting,
         selected: state.selected.has(tx.id),
         onToggle: (t) => {
@@ -495,8 +549,8 @@ export function renderMonth(app, options = {}) {
         class: 'day-empty-row', type: 'button',
         onclick: () => app.openLog({ kind: 'expense', date }),
       },
-        el('span', { class: 'day-name day-name-empty' }, longDate(date)),
-        el('span', { class: 'day-empty-hint' }, 'ยังไม่ได้บันทึก +'),
+        el('span', { class: 'day-name day-name-empty' }, dayHeading(date)),
+        el('span', { class: 'day-empty-hint' }, 'ยังไม่ได้บันทึก', icon('plus', { size: 16 })),
       ),
     );
   }

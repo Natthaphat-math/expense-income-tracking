@@ -6,8 +6,9 @@ import {
   GROUPS, groupLabel, groupsForKind, budgetFor, targetWord, groupKind,
 } from '../model.js';
 import {
-  openSheet, openPicker, confirmDialog, promptText, promptNumber, toast,
+  openSheet, openPicker, confirmDialog, promptText, promptNumber, toast, pageHeader,
 } from '../ui.js';
+import { categoryTile, icon } from '../icons.js';
 import {
   buildBackup, backupFilename, parseBackupFile, mergeTransactions, mergeCategories,
 } from '../backup.js';
@@ -20,6 +21,7 @@ export function renderSettings(app) {
 
   function build() {
     return [
+      pageHeader({ title: 'ตั้งค่า' }),
       el('div', { class: 'settings-body' },
         el('div', { class: 'col col-primary' }, syncCard(app, rerender), backupCard(), importCard()),
         el('div', { class: 'col col-secondary' }, categoriesCard(), budgetsCard(), helpCard()),
@@ -227,11 +229,15 @@ export function renderSettings(app) {
               class: `cat-button ${c.archived ? 'cat-archived' : ''}`, type: 'button',
               onclick: () => editCategory(c),
             },
-              el('span', { class: 'cat-name' }, c.name),
-              c.archived ? el('span', { class: 'cat-tag' }, 'เก็บแล้ว') : null,
-              (c.aliases ?? []).length > 0
-                ? el('span', { class: 'cat-aliases' }, c.aliases.join(', '))
-                : null,
+              categoryTile(c.name, c.group, { size: 'sm' }),
+              el('span', { class: 'cat-text' },
+                el('span', { class: 'cat-name' }, c.name,
+                  c.archived ? el('span', { class: 'cat-tag' }, 'เก็บแล้ว') : null),
+                (c.aliases ?? []).length > 0
+                  ? el('span', { class: 'cat-aliases' }, c.aliases.join(', '))
+                  : null,
+              ),
+              icon('chevronRight', { size: 18, cls: 'cat-mark' }),
             ),
           ))),
         );

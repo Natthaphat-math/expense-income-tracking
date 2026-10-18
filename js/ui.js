@@ -2,6 +2,7 @@
 // ทุกอย่างสร้างด้วย createElement ไม่มี innerHTML
 
 import { el, replace } from './dom.js';
+import { icon, categoryTile } from './icons.js';
 import {
   todayISO, addDays, fromISODate, toISODate, monthName, monthNameShort,
   longDate, relativeDate, monthKey, parseMonthKey,
@@ -27,7 +28,7 @@ export function openSheet({ title, body, actions = [], onClose = null, fullHeigh
     el('div', { class: 'sheet-grip' }),
     el('div', { class: 'sheet-head' },
       el('h2', { class: 'sheet-title' }, title || ''),
-      el('button', { class: 'btn-icon', type: 'button', 'aria-label': 'ปิด', onclick: () => close() }, '✕'),
+      el('button', { class: 'btn-icon', type: 'button', 'aria-label': 'ปิด', onclick: () => close() }, icon('close')),
     ),
     content,
     actions.length > 0 ? el('div', { class: 'sheet-actions' }, actions) : null,
@@ -148,9 +149,12 @@ export function openPicker({
         type: 'button',
         onclick: () => { handle.close(); onSelect(item.value, item); },
       },
+        item.tile ? categoryTile(item.value, item.group, { size: 'sm' }) : null,
         el('span', { class: 'picker-item-label' }, item.label),
         item.hint ? el('span', { class: 'picker-item-hint' }, item.hint) : null,
-        item.value === selected ? el('span', { class: 'picker-check', 'aria-hidden': 'true' }, '✓') : null,
+        item.value === selected
+          ? el('span', { class: 'picker-check' }, icon('check'), el('span', { class: 'visually-hidden' }, 'เลือกอยู่'))
+          : null,
       )),
     )));
   };
@@ -224,9 +228,9 @@ export function openDatePicker({ value, onSelect, title = 'เลือกวั
       el('button', { class: 'chip', type: 'button', onclick: () => { handle.close(); onSelect(addDays(todayISO(), -1)); } }, 'เมื่อวาน'),
     ),
     el('div', { class: 'cal-head' },
-      el('button', { class: 'btn-icon', type: 'button', 'aria-label': 'เดือนก่อนหน้า', onclick: () => step(-1) }, '‹'),
+      el('button', { class: 'btn-icon', type: 'button', 'aria-label': 'เดือนก่อนหน้า', onclick: () => step(-1) }, icon('chevronLeft')),
       heading,
-      el('button', { class: 'btn-icon', type: 'button', 'aria-label': 'เดือนถัดไป', onclick: () => step(1) }, '›'),
+      el('button', { class: 'btn-icon', type: 'button', 'aria-label': 'เดือนถัดไป', onclick: () => step(1) }, icon('chevronRight')),
     ),
     weekdayRow,
     grid,
@@ -259,9 +263,9 @@ export function openMonthPicker({ value, onSelect, title = 'เลือกเ�
 
   const body = el('div', { class: 'month-picker' },
     el('div', { class: 'cal-head' },
-      el('button', { class: 'btn-icon', type: 'button', 'aria-label': 'ปีก่อนหน้า', onclick: () => { year -= 1; render(); } }, '‹'),
+      el('button', { class: 'btn-icon', type: 'button', 'aria-label': 'ปีก่อนหน้า', onclick: () => { year -= 1; render(); } }, icon('chevronLeft')),
       heading,
-      el('button', { class: 'btn-icon', type: 'button', 'aria-label': 'ปีถัดไป', onclick: () => { year += 1; render(); } }, '›'),
+      el('button', { class: 'btn-icon', type: 'button', 'aria-label': 'ปีถัดไป', onclick: () => { year += 1; render(); } }, icon('chevronRight')),
     ),
     grid,
   );
@@ -365,6 +369,46 @@ export function promptText({ title, label, value = '', placeholder = '', hint = 
  * การ์ดบรรทัดเดียวพร้อมปุ่ม — ใช้แทนส่วนที่ว่างเปล่าเพราะยังไม่ได้ตั้งค่า
  * แทนที่จะโชว์แถบความคืบหน้าว่าง ๆ หลายแถบ
  */
+/**
+ * หัวหน้าแบบตัวใหญ่ด้านบน (แบบแอป iOS)
+ * @param {object} o
+ * @param {string} [o.kicker]   บรรทัดเล็กเหนือหัวข้อ
+ * @param {string} o.title
+ * @param {Function} [o.onTitle] ถ้ามี หัวข้อจะเป็นปุ่ม (เช่นเปิดตัวเลือกเดือน)
+ * @param {string} [o.titleHint] คำอธิบายของปุ่มหัวข้อสำหรับโปรแกรมอ่านหน้าจอ
+ * @param {{prevLabel, nextLabel, onPrev, onNext}} [o.stepper] ปุ่มก่อนหน้า/ถัดไป
+ * @param {Node[]} [o.actions] ปุ่มอื่นทางขวา
+ */
+export function pageHeader({ kicker = null, title, onTitle = null, titleHint = null, stepper = null, actions = [] }) {
+  return el('header', { class: 'top-head' },
+    el('div', { class: 'top-head-text' },
+      kicker ? el('p', { class: 'top-kicker' }, kicker) : null,
+      el('h1', { class: 'top-title' },
+        onTitle
+          ? el('button', {
+              class: 'top-title-button', type: 'button', onclick: onTitle,
+              'aria-label': titleHint ? `${title} — ${titleHint}` : null,
+            }, title, icon('chevronDown', { size: 20, cls: 'top-title-mark' }))
+          : title),
+    ),
+    stepper || actions.length > 0
+      ? el('div', { class: 'top-actions' },
+          actions,
+          stepper
+            ? [
+                el('button', {
+                  class: 'round-btn', type: 'button', 'aria-label': stepper.prevLabel, onclick: stepper.onPrev,
+                }, icon('chevronLeft')),
+                el('button', {
+                  class: 'round-btn', type: 'button', 'aria-label': stepper.nextLabel, onclick: stepper.onNext,
+                }, icon('chevronRight')),
+              ]
+            : null,
+        )
+      : null,
+  );
+}
+
 export function notePrompt(message, actionLabel, onAction) {
   return el('section', { class: 'card card-note' },
     el('p', { class: 'note-line' }, message),

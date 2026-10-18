@@ -7,7 +7,7 @@ import {
   groupForCategory,
   defaultGroupFor,
 } from './model.js';
-import { monthKeyOf, previousMonthKey, todayISO } from './format.js';
+import { monthKeyOf, previousMonthKey, todayISO, addDays } from './format.js';
 import { buildLearnedTypes } from './parser.js';
 
 export class Store extends EventTarget {
@@ -17,6 +17,7 @@ export class Store extends EventTarget {
     this.transactions = [];
     this.settings = null;
     this._learned = null;
+    this._frequent = null;
   }
 
   async load() {
@@ -29,6 +30,7 @@ export class Store extends EventTarget {
 
   _changed() {
     this._learned = null;
+    this._frequent = null;
     this.dispatchEvent(new CustomEvent('change'));
   }
 
@@ -41,6 +43,61 @@ export class Store extends EventTarget {
   get learnedTypes() {
     if (!this._learned) this._learned = buildLearnedTypes(this.transactions);
     return this._learned;
+  }
+
+  /**
+   * รายการที่บันทึกบ่อยในช่วง 60 วันล่าสุด สำหรับปุ่มบันทึกด่วน
+   * นับตามชื่อ+ฝั่ง ต้องเคยบันทึกอย่างน้อย 2 ครั้ง
+   * มูลค่าที่เสนอ = มูลค่าที่ใช้บ่อยที่สุด (เสมอกันเอาครั้งล่าสุด)
+   */
+  frequentItems(limit = 6, today = todayISO()) {
+    if (!this._frequent) {
+      const since = addDays(today, -60);
+      const byKey = new Map();
+      for (const tx of this.active) {
+        if (tx.date < since || tx.date > today) continue;
+        const name = tx.name.trim();
+        if (!name || name.length > 40 || name.includes('\n')) continue;
+        const key = `${tx.kind}|${name}`;
+        let row = byKey.get(key);
+        if (!row) {
+          row = { kind: tx.kind, name, count: 0, last: '', type: null, amounts: new Map() };
+          byKey.set(key, row);
+        }
+        row.count += 1;
+        const stamp = `${tx.date}|${String(tx.createdAt ?? 0).padStart(15, '0')}`;
+        if (tx.amount !== null) {
+          const a = row.amounts.get(tx.amount) ?? { n: 0, last: '' };
+          a.n += 1;
+          if (stamp > a.last) a.last = stamp;
+          row.amounts.set(tx.amount, a);
+        }
+        if (stamp > row.last) {
+          row.last = stamp;
+          if (tx.type) row.type = tx.type;
+        } else if (!row.type && tx.type) {
+          row.type = tx.type;
+        }
+      }
+      this._frequent = [...byKey.values()]
+        .filter((r) => r.count >= 2)
+        .sort((a, b) => b.count - a.count || b.last.localeCompare(a.last))
+        .map((r) => {
+          let amount = null;
+          let best = null;
+          for (const [value, a] of r.amounts) {
+            if (!best || a.n > best.n || (a.n === best.n && a.last > best.last)) {
+              best = a;
+              amount = value;
+            }
+          }
+          return {
+            kind: r.kind, name: r.name, amount, type: r.type,
+            group: r.type ? groupForCategory(this.settings, r.type, r.kind) : defaultGroupFor(r.kind),
+          };
+        });
+    }
+    return this._frequent.slice(0, limit);
   }
 
   byId(id) {

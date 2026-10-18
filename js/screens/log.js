@@ -11,41 +11,49 @@ import {
   openPicker, openDatePicker, confirmDialog, toast, openSheet, promptText,
 } from '../ui.js';
 import { deleteTransaction } from './home.js';
+import { icon, categoryTile } from '../icons.js';
 
 const DEBOUNCE_MS = 220;
 
 export function renderLog(app, options = {}) {
   const editing = options.transaction ?? null;
+  // จากปุ่มบันทึกด่วน: กรอกชื่อ มูลค่า และประเภทที่ใช้ประจำไว้ให้ แก้ได้ก่อนกดบันทึก
+  const prefill = editing ? null : (options.prefill ?? null);
+  const startKind = editing?.kind ?? options.kind ?? 'expense';
+  const touched = new Set(editing ? ['amount', 'type', 'group', 'date'] : (options.date ? ['date'] : []));
+  if (prefill?.amount !== null && prefill?.amount !== undefined) touched.add('amount');
+  if (prefill?.type) touched.add('type');
   const state = {
-    kind: editing?.kind ?? options.kind ?? 'expense',
-    text: editing ? editing.name : '',
+    kind: startKind,
+    text: editing ? editing.name : (prefill?.name ?? ''),
     // ช่องที่ผู้ใช้แตะเอง — ตัวแปลงข้อความจะไม่เขียนทับ
-    touched: new Set(editing ? ['amount', 'type', 'group', 'date'] : (options.date ? ['date'] : [])),
-    amount: editing?.amount ?? null,
-    type: editing?.type ?? null,
-    group: editing?.group ?? defaultGroupFor(editing?.kind ?? options.kind ?? 'expense'),
+    touched,
+    amount: editing?.amount ?? prefill?.amount ?? null,
+    type: editing?.type ?? prefill?.type ?? null,
+    group: editing?.group
+      ?? (prefill?.type ? groupForCategory(app.store.settings, prefill.type, startKind) : defaultGroupFor(startKind)),
     date: editing?.date ?? options.date ?? todayISO(),
     parsed: null,
     batch: null,
     dirty: false,
   };
 
-  const kindButton = el('button', {
-    class: 'kind-switch', type: 'button',
-    onclick: () => {
-      state.kind = state.kind === 'expense' ? 'income' : 'expense';
-      if (!state.touched.has('group')) state.group = defaultGroupFor(state.kind);
-      if (!state.touched.has('type')) state.type = null;
-      // ประเภทเดิมอาจเป็นของอีกฝั่ง
-      if (state.type && groupForCategory(app.store.settings, state.type, state.kind) !== state.group) {
-        state.type = null;
-        state.touched.delete('type');
-      }
-      state.dirty = true;
-      reparse();
-      render();
-    },
-  });
+  function setKind(kind) {
+    if (kind === state.kind) return;
+    state.kind = kind;
+    if (!state.touched.has('group')) state.group = defaultGroupFor(state.kind);
+    if (!state.touched.has('type')) state.type = null;
+    // ประเภทเดิมอาจเป็นของอีกฝั่ง
+    if (state.type && groupForCategory(app.store.settings, state.type, state.kind) !== state.group) {
+      state.type = null;
+      state.touched.delete('type');
+    }
+    state.dirty = true;
+    reparse();
+    render();
+  }
+
+  const kindSwitch = el('div', { class: 'seg seg-full seg-kind', role: 'group', 'aria-label': 'รายจ่ายหรือรายรับ' });
 
   const textarea = el('textarea', {
     class: 'input textarea',
@@ -145,7 +153,7 @@ export function renderLog(app, options = {}) {
   function pickType() {
     const cats = activeCategories(app.store.settings, { kind: state.kind });
     const items = cats.map((c) => ({
-      label: c.name, value: c.name, group: c.group, aliases: c.aliases,
+      label: c.name, value: c.name, group: c.group, aliases: c.aliases, tile: true,
     }));
     openPicker({
       title: 'เลือกประเภท',
@@ -204,7 +212,8 @@ export function renderLog(app, options = {}) {
         el('span', { class: 'field-label' }, 'มูลค่า'),
         el('div', { class: 'input-with-suffix' }, amountInput, el('span', { class: 'input-suffix' }, 'บาท')),
       ),
-      pickerField('ประเภท', state.type ?? 'ยังไม่ระบุ', !state.type, pickType),
+      pickerField('ประเภท', state.type ?? 'ยังไม่ระบุ', !state.type, pickType,
+        categoryTile(state.type, state.group, { size: 'sm' })),
       pickerField('กลุ่มรายการ', groupLabel(state.group), false, pickGroup),
       pickerField('วันที่', relativeDate(state.date), false, () => pickDate(state.date, (iso) => setField('date', iso))),
     );
@@ -227,7 +236,7 @@ export function renderLog(app, options = {}) {
         el('button', {
           class: 'chip chip-dismiss', type: 'button', 'aria-label': 'ไม่ใช้ข้อเสนอนี้',
           onclick: () => { parsed.unknownType = null; render(); },
-        }, '✕'),
+        }, icon('close', { size: 18 })),
       ));
     }
 
@@ -277,7 +286,7 @@ export function renderLog(app, options = {}) {
             const cats = activeCategories(app.store.settings, { kind: state.kind });
             openPicker({
               title: 'เลือกประเภท',
-              items: cats.map((c) => ({ label: c.name, value: c.name, group: c.group, aliases: c.aliases })),
+              items: cats.map((c) => ({ label: c.name, value: c.name, group: c.group, aliases: c.aliases, tile: true })),
               selected: row.type,
               groupLabels: Object.fromEntries(GROUPS.map((g) => [g.code, g.label])),
               onSelect: (value) => { row.type = value; row.typeTouched = true; render(); },
@@ -360,11 +369,11 @@ export function renderLog(app, options = {}) {
   }
 
   function render() {
-    replace(kindButton,
-      el('span', { class: 'kind-label' }, state.kind === 'expense' ? 'รายจ่าย' : 'รายรับ'),
-      el('span', { class: 'kind-hint' }, 'แตะเพื่อสลับ'),
-    );
-    kindButton.className = `kind-switch kind-${state.kind}`;
+    replace(kindSwitch, [['expense', 'รายจ่าย'], ['income', 'รายรับ']].map(([kind, label]) => el('button', {
+      class: `seg-item seg-kind-${kind} ${state.kind === kind ? 'seg-item-on' : ''}`, type: 'button',
+      'aria-pressed': state.kind === kind ? 'true' : 'false',
+      onclick: () => setKind(kind),
+    }, label)));
     renderFields();
     renderChips();
     renderBatch();
@@ -375,17 +384,16 @@ export function renderLog(app, options = {}) {
 
   return el('div', { class: 'screen screen-log' },
     el('header', { class: 'log-head' },
-      el('span', { class: 'btn-icon-placeholder' }),
       el('h1', { class: 'log-title' }, editing ? 'แก้ไขรายการ' : 'บันทึกรายการ'),
       editing
         ? el('button', {
             class: 'btn-icon btn-icon-danger', type: 'button', 'aria-label': 'ลบรายการ',
             onclick: async () => { if (await deleteTransaction(app, editing)) app.back(); },
-          }, '🗑')
+          }, icon('trash'))
         : el('span', { class: 'btn-icon-placeholder' }),
     ),
     el('main', { class: 'log-body' },
-      kindButton,
+      kindSwitch,
       el('div', { class: 'field' },
         el('span', { class: 'field-label' }, 'รายละเอียด'),
         textarea,
@@ -403,15 +411,15 @@ export function renderLog(app, options = {}) {
 }
 
 /** ช่องที่แตะแล้วเปิดตัวเลือก (ประเภท / กลุ่ม / วันที่) */
-function pickerField(label, value, isEmpty, onClick) {
+function pickerField(label, value, isEmpty, onClick, lead = null) {
   return el('button', {
     class: `picker-field ${isEmpty ? 'picker-field-empty' : ''}`,
     type: 'button',
     onclick: onClick,
   },
     el('span', { class: 'field-label' }, label),
-    el('span', { class: 'picker-field-value' }, value),
-    el('span', { class: 'picker-field-mark', 'aria-hidden': 'true' }, '›'),
+    el('span', { class: 'picker-field-value' }, lead, el('span', {}, value)),
+    icon('chevronRight', { size: 18, cls: 'picker-field-mark' }),
   );
 }
 
