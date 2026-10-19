@@ -35,20 +35,23 @@ function stripLeading(text, words) {
   return text;
 }
 
-/** ตัดคำว่า "บาท" ที่ตามหลังตัวเลขออก */
+/**
+ * ตัดคำว่า "บาท" ที่ตามหลังตัวเลขออก
+ * พิมพ์ด้วยเสียงมักได้ "50 บาทค่าอาหาร" ติดกันไม่มีช่องว่าง — "บาท" หลังตัวเลขเป็นหน่วยเงินเสมอ
+ * จึงตัดได้เลย ยกเว้น "บ" ตัวเดียว ซึ่งต้องจบคำพอดี (ไม่งั้น "50 บะหมี่" จะเสียคำ)
+ */
 function stripCurrency(text) {
-  let rest = text.trim();
+  const rest = text.trim();
   for (const word of CURRENCY_WORDS) {
-    if (rest === word) return '';
-    if (rest.startsWith(word)) {
-      const after = rest.slice(word.length);
-      if (after === '' || /^[\s]/.test(after) || /^[^ก-๙a-zA-Z0-9]/.test(after)) {
-        return after.trim();
-      }
-    }
+    if (!rest.startsWith(word)) continue;
+    const after = rest.slice(word.length);
+    if (word.length > 1 || after === '' || /^[^ก-๙a-zA-Z0-9]/.test(after)) return after.trim();
   }
   return rest;
 }
+
+// คำลงท้ายสุภาพจากการพูด เช่น "50 บาทค่ะ" — ไม่ใช่ชื่อประเภท
+const POLITE_ENDING = /\s*(ค่ะ|คะ|ครับ|คับ|จ้ะ|จ้า)$/;
 
 function stripTypePrefix(text) {
   return stripLeading(text.trim(), TYPE_PREFIXES).trim();
@@ -121,7 +124,7 @@ function matchTrailingCategory(text, categories, kind) {
  */
 export function parseLine(line, { categories = [], kind = 'expense', learned = null } = {}) {
   const raw = String(line ?? '');
-  const text = normalizeLine(raw);
+  let text = normalizeLine(raw);
   const result = {
     raw,
     name: '',
@@ -130,6 +133,8 @@ export function parseLine(line, { categories = [], kind = 'expense', learned = n
     suggestedType: null,
     unknownType: null,
   };
+  if (!text) return result;
+  text = text.replace(POLITE_ENDING, '').trim();
   if (!text) return result;
 
   // 1) จำนวนเงิน: ตัวเลขตัวแรก แม้จะติดกับตัวอักษร (เสียงพูดมักได้ "ก๋วยเตี๋ยว20บาท")

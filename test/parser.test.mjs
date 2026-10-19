@@ -178,3 +178,29 @@ test('ตัวเลขตัวแรกเท่านั้นที่เ�
   assert.equal(r.amount, 2);
   assert.equal(r.name, 'ข้าว');
 });
+
+test('"บาท" ติดกับประเภท (พิมพ์ด้วยเสียง) และคำลงท้ายสุภาพ', () => {
+  for (const line of [
+    'ข้าวมันไก่ 50 บาทค่าอาหาร',
+    'ข้าวมันไก่50บาทค่าอาหาร',
+    'ข้าวมันไก่ 50 บาทอาหาร',
+    'ข้าวมันไก่ 50 บาท ค่าอาหาร',
+    'ข้าวมันไก่ 50 บาทค่าอาหารค่ะ',
+    'ข้าวมันไก่ 50 บาทถ้วนค่าอาหาร',
+  ]) {
+    const r = parse(line);
+    assert.equal(r.name, 'ข้าวมันไก่', line);
+    assert.equal(r.amount, 50, line);
+    assert.equal(r.type, 'ค่าอาหาร', line);
+    assert.equal(r.unknownType, null, line);
+  }
+  // ลงท้ายสุภาพ ไม่กลายเป็นประเภทใหม่
+  const polite = parse('ข้าวมันไก่ 50 บาทค่ะ');
+  assert.equal(polite.amount, 50);
+  assert.equal(polite.unknownType, null);
+  assert.equal(parse('ค่ารถ 40 ครับ').unknownType, null);
+  // "บ" ตัวเดียวต้องจบคำ — "บะหมี่" ไม่ถูกตัด
+  assert.equal(parse('ก๋วยเตี๋ยว 50 บะหมี่').unknownType, 'บะหมี่');
+  // ประเภทที่ไม่รู้จักหลัง "บาท" ยังเสนอให้เพิ่มเหมือนเดิม
+  assert.equal(parse('ข้าวมันไก่ 50 บาทค่าขนมเด็ก').unknownType, 'ค่าขนมเด็ก');
+});
