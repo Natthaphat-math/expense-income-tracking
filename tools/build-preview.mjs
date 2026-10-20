@@ -6,6 +6,7 @@
 // - ใช้ข้อมูลตัวอย่าง (tools/demo-data.js) ไม่แตะข้อมูลจริงหรือ Firestore
 // - ปิดการซิงก์ และไม่ลงทะเบียน service worker (กรอบของพรีวิวไม่อนุญาต)
 // - ปุ่มส่งออกไฟล์บอกว่าใช้ในพรีวิวไม่ได้ แทนที่จะกดแล้วเงียบ
+// - หารกันเป็นตัวจำลองในหน่วยความจำ (tools/preview-split-service.js)
 // - ตัวอ่านสลิปเป็นตัวจำลอง (tools/preview-slip-reader.js) ให้ลองขั้นตอนตรวจและกันซ้ำได้
 // - รวม JS/CSS ทั้งหมดไว้ในไฟล์เดียว เพราะพรีวิวโหลดไฟล์จากที่อื่นไม่ได้
 // ไฟล์ที่ได้ห้าม commit (อยู่ใน .gitignore) และห้ามวางบน GitHub Pages
@@ -22,7 +23,11 @@ const OUT = path.resolve(process.argv[2] || path.join(ROOT, 'dist/preview.html')
 // (ถ้าโค้ดแอปเปลี่ยนจนจุดนี้หาย ต้องรู้ทันที ไม่ใช่ได้พรีวิวที่ซิงก์ข้อมูลจริง)
 const PATCHES = {
   'js/firebase-config.js': [['export const SYNC_ENABLED = true;', 'export const SYNC_ENABLED = false;']],
-  'js/main.js': [['\n  registerServiceWorker();\n', '\n']],
+  'js/main.js': [
+    ['\n  registerServiceWorker();\n', '\n'],
+    // ซิงก์ปิดอยู่ในพรีวิว แต่ยังอยากให้เห็นหารกัน (ตัวจำลอง)
+    ['  if (!SYNC_ENABLED) return;\n  startSplit(app);', '  startSplit(app);\n  if (!SYNC_ENABLED) return;'],
+  ],
   'js/screens/settings.js': [[
     '  async function exportData() {\n',
     "  async function exportData() {\n    toast('การส่งออกไฟล์ใช้ได้ในแอปจริง ไม่ใช่ในพรีวิว');\n    return;\n",
@@ -35,6 +40,10 @@ const patchPlugin = {
     // ตัวอ่านสลิปจริงโหลดไฟล์จาก vendor/ ซึ่งพรีวิวไฟล์เดียวไม่มี — ใช้ตัวจำลองแทน
     build.onResolve({ filter: /slip-reader\.js$/ }, () => ({
       path: path.join(ROOT, 'tools/preview-slip-reader.js'),
+    }));
+    // หารกันต้องใช้ Firebase — พรีวิวใช้ตัวจำลองที่เก็บในหน่วยความจำ
+    build.onResolve({ filter: /split-service\.js$/ }, () => ({
+      path: path.join(ROOT, 'tools/preview-split-service.js'),
     }));
     build.onLoad({ filter: /\.js$/ }, (args) => {
       const rel = path.relative(ROOT, args.path).split(path.sep).join('/');

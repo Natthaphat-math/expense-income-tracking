@@ -34,11 +34,44 @@ async function importAll() {
 
   const app = appMod.initializeApp(firebaseConfig);
   const auth = authMod.getAuth(app);
+  const db = openFirestore(app, storeMod);
+  const fb = { app, auth, db, authMod, storeMod };
+  useEmulatorIfTesting(fb);
   // เก็บสถานะเข้าสู่ระบบไว้ในเครื่อง เพื่อไม่ต้องล็อกอินใหม่ทุกครั้งที่เปิดแอป
   await authMod.setPersistence(auth, authMod.browserLocalPersistence).catch(() => {});
-  const db = storeMod.getFirestore(app);
+  return fb;
+}
 
-  return { app, auth, db, authMod, storeMod };
+/**
+ * Firestore พร้อมแคชในเครื่อง (IndexedDB) — รายการหารกันเปิดได้ทันทีแม้ออฟไลน์
+ * และสิ่งที่แก้ตอนออฟไลน์จะถูกส่งให้เองเมื่อเน็ตกลับมา
+ * เบราว์เซอร์ที่ใช้แคชนี้ไม่ได้ (โหมดส่วนตัว ฯลฯ) ใช้แบบธรรมดาแทน
+ */
+function openFirestore(app, storeMod) {
+  try {
+    return storeMod.initializeFirestore(app, {
+      localCache: storeMod.persistentLocalCache({
+        tabManager: storeMod.persistentMultipleTabManager(),
+      }),
+    });
+  } catch (err) {
+    console.warn('เปิดแคช Firestore ในเครื่องไม่ได้ — ใช้แบบไม่มีแคช', err);
+    return storeMod.getFirestore(app);
+  }
+}
+
+/**
+ * สำหรับทดสอบในเครื่องนักพัฒนาเท่านั้น: ต่อ emulator แทนคลาวด์จริง
+ * ทำงานเฉพาะบน localhost และต้องตั้งค่า tet:emulator ไว้เอง — บนเว็บจริงไม่มีผลใด ๆ
+ */
+function useEmulatorIfTesting(fb) {
+  const local = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  let wanted = false;
+  try { wanted = localStorage.getItem('tet:emulator') === '1'; } catch { /* ไม่เป็นไร */ }
+  if (!local || !wanted) return;
+  fb.authMod.connectAuthEmulator(fb.auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+  fb.storeMod.connectFirestoreEmulator(fb.db, '127.0.0.1', 8080);
+  globalThis.__firebase = fb;
 }
 
 /** true เมื่อเคยโหลด SDK สำเร็จแล้ว */

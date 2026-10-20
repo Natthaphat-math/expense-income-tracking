@@ -31,3 +31,9 @@ export const OWNER_EMAIL = null;
 
 /** เปิด/ปิดการซิงก์ทั้งระบบ ถ้าเป็น false แอปจะทำงานในเครื่องอย่างเดียว */
 export const SYNC_ENABLED = true;
+
+/**
+ * หารกัน: id ของเอกสารคู่ใน Firestore (pairs/{id}) — สร้างเองใน Firebase console
+ * อีเมลของสองคนอยู่ในเอกสารนั้นและในกฎ ไม่อยู่ใน repo สาธารณะนี้
+ */
+export const SPLIT_PAIR_ID = 'main';

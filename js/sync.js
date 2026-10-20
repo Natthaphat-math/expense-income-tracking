@@ -24,6 +24,11 @@ export class SyncManager extends EventTarget {
     this.lastError = null;
     this._running = false;
     this._unwatch = null;
+    /**
+     * ถามก่อนซิงก์ข้อมูลส่วนตัวทุกครั้ง — บัญชีของอีกคนในหารกันไม่มีข้อมูลส่วนตัวบนคลาวด์
+     * (กฎไม่อนุญาต) จึงต้องข้าม ไม่งั้นจะขึ้นข้อผิดพลาดค้างไว้ (ตั้งค่าใน main.js)
+     */
+    this.allowPersonal = async () => true;
   }
 
   /** เริ่มติดตามสถานะเข้าสู่ระบบ และซิงก์ให้อัตโนมัติ */
@@ -116,6 +121,10 @@ export class SyncManager extends EventTarget {
    */
   async syncNow() {
     if (!SYNC_ENABLED || !this.adapter || this._running) return null;
+    if (!(await this.allowPersonal())) {
+      this._setStatus('shared-only');
+      return { pulled: 0, pushed: 0, skipped: true };
+    }
     this._running = true;
     this._setStatus('syncing');
 

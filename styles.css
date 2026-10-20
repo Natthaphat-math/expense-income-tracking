@@ -1571,3 +1571,65 @@ p.sync-error {
 .slip-full { display: block; width: 100%; height: auto; border-radius: var(--radius-sm); }
 body[data-screen="slips"] .app-root { padding-bottom: calc(var(--safe-bottom) + 96px); }
 .log-actions .btn[disabled] { opacity: .5; }
+
+/* ---------------------------------------------------------- หารกัน */
+.split-balance { text-align: left; }
+.split-balance.is-owed .hero-amount { color: var(--income); }
+.split-balance.is-owing .hero-amount { color: var(--ink); }
+.split-balance-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.split-add { display: inline-flex; align-items: center; justify-content: center; gap: 6px; margin-top: 14px; }
+.split-section { margin-top: 4px; }
+.split-empty { padding: 18px 16px; border-radius: var(--radius); background: var(--surface); color: var(--ink-soft); text-align: center; }
+.split-row .tx-button { padding-left: 4px; }
+.split-tick {
+  flex: none;
+  width: var(--tap);
+  height: var(--tap);
+  margin-left: 8px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+}
+.split-tick-mark { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--outline); }
+.split-tick:active .split-tick-mark { background: var(--accent-soft); border-color: var(--accent); }
+.split-row.is-history .tx-button { padding-left: 14px; }
+.split-amount { flex: none; display: flex; flex-direction: column; align-items: flex-end; }
+.split-amount-value { font-weight: 600; font-size: 16.5px; font-variant-numeric: tabular-nums; }
+.split-amount-label { font-size: 12.5px; color: var(--ink-soft); }
+.split-history-toggle {
+  width: 100%;
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 18px 0 8px;
+  padding: 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.split-pending { text-align: center; margin-top: 14px; }
+.split-form { gap: 4px; }
+.split-form-dynamic { display: flex; flex-direction: column; gap: 6px; }
+.split-form .seg-item { min-height: var(--tap); }
+.split-preview {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.split-card { margin-top: 14px; }
+.split-badge {
+  flex: none;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 13px;
+  font-weight: 600;
+}
+.btn-danger-text { color: var(--danger); }
+body[data-screen="split"] .app-root { padding-bottom: calc(var(--safe-bottom) + 32px); }
+@media (min-width: 1000px) { .screen-split { max-width: 760px; } }

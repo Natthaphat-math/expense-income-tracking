@@ -15,6 +15,7 @@ const STATUS_TEXT = {
   syncing: 'กำลังซิงก์…',
   ok: 'ซิงก์แล้ว',
   error: 'ซิงก์ไม่สำเร็จ',
+  'shared-only': 'ใช้เฉพาะหารกัน',
 };
 
 export function syncCard(app, rerender) {
@@ -173,6 +174,12 @@ async function afterSignIn(app, rerender) {
 
   const result = await sync.syncNow();
   rerender();
+
+  // บัญชีของอีกคนในหารกัน — ไม่มีข้อมูลส่วนตัวให้ซิงก์ ไม่ต้องถามเรื่องส่งขึ้นคลาวด์
+  if (result?.skipped) {
+    toast('เข้าสู่ระบบแล้ว');
+    return;
+  }
 
   if (!result) {
     toast(sync.lastError ?? 'ซิงก์ไม่สำเร็จ');

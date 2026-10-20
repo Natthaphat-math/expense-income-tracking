@@ -78,6 +78,70 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ------------------------------------------------------------ หารกัน
+    // เอกสาร pairs/{pairId} สร้างเองใน Firebase console เท่านั้น (แอปเขียนไม่ได้):
+    //   members: [อีเมลเธอ, อีเมลเขา]   ตัวพิมพ์เล็กทั้งหมด
+    //   names:   [ชื่อเธอ, ชื่อเขา]      ลำดับเดียวกับ members
+    //   owner:   อีเมลของเจ้าของแอป (คนที่ใช้บันทึกรายรับรายจ่ายส่วนตัว)
+    // สองคนนี้เห็นเฉพาะรายการหารกัน — ข้อมูลส่วนตัว (users/...) ยังเป็นของ owner คนเดียวตามกฎด้านบน
+
+    function pairMembers(pairId) {
+      return get(/databases/$(database)/documents/pairs/$(pairId)).data.members;
+    }
+
+    function isMember(pairId) {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email in pairMembers(pairId);
+    }
+
+    function validSplit(d, pairId) {
+      let members = pairMembers(pairId);
+      return d.keys().hasOnly(['id','kind','debtor','creditor','amount','total','name','date',
+                               'settled','settledBy','settledAt','createdBy','createdAt',
+                               'updatedAt','updatedBy','deleted'])
+        && d.keys().hasAll(['id','kind','debtor','creditor','amount','name','date','settled',
+                            'createdBy','createdAt','updatedAt','updatedBy','deleted'])
+        && d.id is string && d.id.matches('^[A-Za-z0-9_-]{1,64}$')
+        && d.kind in ['item','payment']
+        && d.debtor in members && d.creditor in members && d.debtor != d.creditor
+        && d.amount is number && d.amount > 0 && d.amount < 100000000
+        && (!('total' in d) || d.total == null
+            || (d.total is number && d.total >= d.amount && d.total < 100000000))
+        && d.name is string && d.name.size() <= 200 && (d.kind == 'payment' || d.name.size() > 0)
+        && d.date is string && d.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && d.settled is bool
+        && (!('settledBy' in d) || d.settledBy == null || d.settledBy in members)
+        && (!('settledAt' in d) || d.settledAt == null || d.settledAt is int)
+        && d.createdBy in members
+        && d.createdAt is int && d.updatedAt is int
+        // คนที่แก้ต้องเป็นคนที่เข้าสู่ระบบอยู่จริง ปลอมชื่ออีกฝ่ายไม่ได้
+        && d.updatedBy == request.auth.token.email
+        && d.deleted is bool;
+    }
+
+    match /pairs/{pairId} {
+      allow read: if isMember(pairId);
+      allow write: if false;
+    }
+
+    match /pairs/{pairId}/splits/{splitId} {
+      allow read: if isMember(pairId);
+      allow create: if isMember(pairId)
+        && validSplit(request.resource.data, pairId)
+        && request.resource.data.id == splitId
+        && request.resource.data.createdBy == request.auth.token.email;
+      // แก้ได้ทั้งสองคน (ติ๊กเคลียร์ แก้ยอด ลบแบบ soft) แต่ห้ามเปลี่ยนว่าใครสร้าง/ชนิด/เวลาสร้าง
+      allow update: if isMember(pairId)
+        && validSplit(request.resource.data, pairId)
+        && request.resource.data.id == resource.data.id
+        && request.resource.data.kind == resource.data.kind
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt;
+      // ลบจริงไม่ได้ ใช้ deleted: true แทน เพื่อให้อีกเครื่องรู้ว่าถูกลบ (และเลิกทำได้)
+      allow delete: if false;
+    }
+
     // ทุกอย่างที่เหลือปิดหมด
     match /{document=**} {
       allow read, write: if false;

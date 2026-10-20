@@ -14,6 +14,8 @@ import { renderYear } from './screens/year.js';
 import { renderSettings } from './screens/settings.js';
 import { renderSort } from './screens/sort.js';
 import { renderSlips } from './screens/slips.js';
+import { renderSplit } from './screens/split.js';
+import { SplitService } from './split-service.js';
 import { handleSignInLinkOnLoad } from './screens/sync-ui.js';
 import { SyncManager } from './sync.js';
 import { SYNC_ENABLED } from './firebase-config.js';
@@ -79,7 +81,7 @@ class App {
 
   /** หน้าหลักสี่หน้าสลับกันตรง ๆ ไม่ซ้อนกัน จึงไม่ต้องมีปุ่มย้อนกลับ */
   go(name, options = {}) {
-    if (PAGES.some((p) => p.id === name)) this.stack = [{ name, options }];
+    if (PAGES.some((p) => p.id === name) || this.partnerMode) this.stack = [{ name, options }];
     else this.stack.push({ name, options });
     this.render();
   }
@@ -94,7 +96,15 @@ class App {
     this.go('log', options);
   }
 
+  /** บัญชีของอีกคนในหารกัน — เห็นแค่หน้าหารกันกับตั้งค่า ไม่มีข้อมูลรายรับรายจ่ายส่วนตัว */
+  get partnerMode() {
+    return this.split?.role === 'partner';
+  }
+
   render() {
+    if (this.partnerMode && !['split', 'settings'].includes(this.current.name)) {
+      this.stack = [{ name: 'split', options: {} }];
+    }
     const { name, options } = this.current;
     const screens = {
       day: renderDay,
@@ -104,6 +114,7 @@ class App {
       settings: renderSettings,
       sort: renderSort,
       slips: renderSlips,
+      split: renderSplit,
     };
     replace(this.root, screens[name](this, options));
     this.root.scrollTop = 0;
@@ -115,7 +126,7 @@ class App {
     // หน้าบันทึกรายการเป็นฟอร์ม มีปุ่มยกเลิก/บันทึกของตัวเอง
     // ถ้าโผล่ปุ่มเปลี่ยนหน้ามาด้วยจะกดพลาดแล้วข้อมูลที่พิมพ์ไว้หาย
     // หน้าจัดประเภทเป็นงานที่ทำต่อเนื่อง มีปุ่ม "เสร็จ" ของตัวเอง
-    if (name === 'log' || name === 'sort' || name === 'slips') {
+    if (name === 'log' || name === 'sort' || name === 'slips' || name === 'split' || this.partnerMode) {
       replace(this.bar);
       this.bar.hidden = true;
       return;
@@ -147,12 +158,12 @@ class App {
    * แจ้งผลพร้อมปุ่ม "เลิกทำ"
    * entries = [{ id, before }] ตาม Store.revert
    */
-  notifyUndoable(message, entries) {
+  notifyUndoable(message, entries, revert = (e) => this.store.revert(e)) {
     toast(message, {
       action: {
         label: 'เลิกทำ',
         onClick: async () => {
-          await this.store.revert(entries);
+          await revert(entries);
           // หน้าบันทึกเป็นฟอร์มที่อาจพิมพ์ค้างอยู่ — ห้ามวาดใหม่ทับ
           if (this.current.name !== 'log') this.render();
           toast('ย้อนกลับแล้ว');
@@ -229,9 +240,15 @@ async function boot() {
  */
 async function startSync(app) {
   if (!SYNC_ENABLED) return;
+  startSplit(app);
   try {
     const sync = new SyncManager(app.store);
     app.sync = sync;
+    // อีกคนในหารกันไม่มีข้อมูลส่วนตัวบนคลาวด์ — รอให้รู้ก่อนว่าเป็นใคร แล้วค่อยซิงก์
+    sync.allowPersonal = async () => {
+      await app.split?.whenSettled();
+      return app.split?.role !== 'partner';
+    };
     // สถานะซิงก์เปลี่ยน ให้หน้าตั้งค่าที่เปิดอยู่อัปเดตตาม
     sync.addEventListener('status', () => {
       if (app.current.name === 'settings') app.render();
@@ -241,6 +258,25 @@ async function startSync(app) {
   } catch (err) {
     console.warn('เริ่มการซิงก์ไม่สำเร็จ — ใช้งานในเครื่องต่อไป', err);
   }
+}
+
+/** หารกัน: ฟังรายการที่ใช้ร่วมกันแบบเรียลไทม์ แล้ววาดหน้าที่เกี่ยวข้องใหม่ */
+function startSplit(app) {
+  const split = new SplitService();
+  app.split = split;
+  let lastRole = null;
+  split.addEventListener('change', () => {
+    const role = split.role;
+    const roleChanged = role !== lastRole;
+    lastRole = role;
+    const here = app.current.name;
+    // ไม่วาดทับฟอร์มที่กำลังพิมพ์อยู่
+    if (here === 'log' || here === 'slips') return;
+    // แผ่นฟอร์มที่เปิดอยู่ลอยอยู่เหนือหน้าจอ (อยู่นอก #app) วาดหน้าข้างใต้ใหม่ได้โดยไม่กระทบ
+    if (roleChanged || here === 'split' || here === 'day' || here === 'settings') app.render();
+  });
+  split.addEventListener('write-error', (e) => toast(`หารกัน: ${e.detail}`));
+  split.start().catch((err) => console.warn('เริ่มหารกันไม่สำเร็จ', err));
 }
 
 /** ขอให้เบราว์เซอร์อย่าเก็บกวาดข้อมูลของเราทิ้งเมื่อพื้นที่ใกล้เต็ม */

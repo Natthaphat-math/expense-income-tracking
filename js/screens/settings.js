@@ -21,6 +21,21 @@ export function renderSettings(app) {
   const rerender = () => replace(host, build());
 
   function build() {
+    // บัญชีของอีกคนในหารกัน: มีแค่การเข้าสู่ระบบกับการแสดงผล
+    if (app.partnerMode) {
+      return [
+        pageHeader({
+          title: 'ตั้งค่า',
+          actions: [el('button', {
+            class: 'btn btn-small btn-tonal', type: 'button', onclick: () => app.go('split'),
+          }, 'กลับ')],
+        }),
+        el('div', { class: 'settings-body' },
+          el('div', { class: 'col col-primary' }, syncCard(app, rerender)),
+          el('div', { class: 'col col-secondary' }, displayCard()),
+        ),
+      ];
+    }
     return [
       pageHeader({ title: 'ตั้งค่า' }),
       el('div', { class: 'settings-body' },

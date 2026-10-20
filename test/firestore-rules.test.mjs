@@ -209,3 +209,108 @@ test('เส้นทางอื่นนอก users/ ปิดทั้งห
   await assertFails(setDoc(doc(db, 'anything', 'doc1'), { x: 1 }));
   await assertFails(setDoc(doc(db, 'users', OWNER_UID, 'meta', 'other'), { x: 1 }));
 });
+
+// ───────────────────────────────────────────────── หารกัน (สองคน)
+
+const PARTNER = 'partner@example.com';
+const PARTNER_UID = 'partner-uid';
+const PAIR = 'main';
+
+const partnerDb = () => env.authenticatedContext(PARTNER_UID, {
+  email: PARTNER, email_verified: true,
+}).firestore();
+
+async function seedPair() {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'pairs', PAIR), {
+      members: [OWNER, PARTNER], names: ['เธอ', 'เขา'], owner: OWNER,
+    });
+  });
+}
+
+const split = (by, over = {}) => ({
+  id: 's1', kind: 'item', debtor: OWNER, creditor: PARTNER, amount: 50, total: null,
+  name: 'ข้าวผัด', date: '2026-10-20', settled: false, settledBy: null, settledAt: null,
+  createdBy: by, createdAt: 1792000000000, updatedAt: 1792000000000, updatedBy: by,
+  deleted: false, ...over,
+});
+const splitRef = (db, id = 's1') => doc(db, 'pairs', PAIR, 'splits', id);
+
+test('หารกัน: สมาชิกทั้งสองคนอ่านและเพิ่มรายการได้', async () => {
+  await seedPair();
+  await assertSucceeds(getDoc(doc(partnerDb(), 'pairs', PAIR)));
+  await assertSucceeds(setDoc(splitRef(partnerDb()), split(PARTNER)));
+  await assertSucceeds(getDoc(splitRef(ownerDb())));
+  await assertSucceeds(getDocs(collection(ownerDb(), 'pairs', PAIR, 'splits')));
+});
+
+test('หารกัน: คนนอก อีเมลที่ยังไม่ยืนยัน และคนที่ไม่ได้เข้าสู่ระบบ เข้าไม่ได้', async () => {
+  await seedPair();
+  const stranger = env.authenticatedContext('x', { email: STRANGER, email_verified: true }).firestore();
+  const unverified = env.authenticatedContext(PARTNER_UID, { email: PARTNER, email_verified: false }).firestore();
+  for (const db of [stranger, unverified, env.unauthenticatedContext().firestore()]) {
+    await assertFails(getDoc(doc(db, 'pairs', PAIR)));
+    await assertFails(getDoc(splitRef(db)));
+    await assertFails(setDoc(splitRef(db, 's9'), split(PARTNER, { id: 's9' })));
+  }
+});
+
+test('หารกัน: สมาชิกแก้เอกสาร pairs เองไม่ได้ (เพิ่มคนเข้าคู่ไม่ได้)', async () => {
+  await seedPair();
+  await assertFails(setDoc(doc(ownerDb(), 'pairs', PAIR), { members: [OWNER, PARTNER, STRANGER], names: [], owner: OWNER }));
+});
+
+test('หารกัน: ปลอมเป็นอีกฝ่ายไม่ได้', async () => {
+  await seedPair();
+  await assertFails(setDoc(splitRef(partnerDb(), 's2'), split(OWNER, { id: 's2', updatedBy: OWNER })));
+  await assertFails(setDoc(splitRef(partnerDb(), 's2'), split(OWNER, { id: 's2', updatedBy: PARTNER })));
+});
+
+test('หารกัน: ข้อมูลผิดรูปแบบถูกปฏิเสธ', async () => {
+  await seedPair();
+  const db = partnerDb();
+  const bad = [
+    { debtor: STRANGER },                    // คนนอกคู่
+    { debtor: PARTNER },                     // ค้างตัวเอง
+    { amount: 0 }, { amount: -5 }, { amount: '50' }, { amount: 100000000 },
+    { total: 10 },                           // ยอดรวมน้อยกว่าส่วนที่ค้าง
+    { name: '' },                            // รายการต้องมีชื่อ
+    { name: 'x'.repeat(201) },
+    { kind: 'loan' },
+    { date: '20/10/2026' },
+    { settledBy: STRANGER },
+    { extra: 'ไม่อนุญาต' },
+  ];
+  for (const over of bad) {
+    await assertFails(setDoc(splitRef(db, 'bad'), split(PARTNER, { id: 'bad', ...over })), JSON.stringify(over));
+  }
+  await assertFails(setDoc(splitRef(db, 'other'), split(PARTNER, { id: 'notmatching' })));
+  // การโอนคืนไม่ต้องมีชื่อ
+  await assertSucceeds(setDoc(splitRef(db, 'p1'), split(PARTNER, { id: 'p1', kind: 'payment', debtor: PARTNER, creditor: OWNER, name: '' })));
+});
+
+test('หารกัน: อีกฝ่ายติ๊กเคลียร์และแก้ได้ แต่เปลี่ยนคนสร้าง/ชนิด/เวลาสร้างไม่ได้ และลบจริงไม่ได้', async () => {
+  await seedPair();
+  await assertSucceeds(setDoc(splitRef(partnerDb(), 's3'), split(PARTNER, { id: 's3' })));
+  const owner = ownerDb();
+  await assertSucceeds(setDoc(splitRef(owner, 's3'), split(PARTNER, {
+    id: 's3', settled: true, settledBy: OWNER, settledAt: 1792000100000, updatedBy: OWNER, updatedAt: 1792000100000,
+  })));
+  await assertFails(setDoc(splitRef(owner, 's3'), split(OWNER, { id: 's3', updatedBy: OWNER })));
+  await assertFails(setDoc(splitRef(owner, 's3'), split(PARTNER, { id: 's3', kind: 'payment', updatedBy: OWNER })));
+  await assertFails(setDoc(splitRef(owner, 's3'), split(PARTNER, { id: 's3', createdAt: 1, updatedBy: OWNER })));
+  await assertSucceeds(setDoc(splitRef(owner, 's3'), split(PARTNER, { id: 's3', deleted: true, updatedBy: OWNER })));
+  await assertFails(deleteDoc(splitRef(owner, 's3')));
+});
+
+test('หารกัน: อีกฝ่ายยังเข้าข้อมูลส่วนตัวของเจ้าของไม่ได้', async () => {
+  await seedPair();
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(txRef(ctx.firestore()), validTx());
+  });
+  const db = partnerDb();
+  await assertFails(getDoc(txRef(db)));
+  await assertFails(getDocs(collection(db, 'users', OWNER_UID, 'transactions')));
+  await assertFails(setDoc(txRef(db, PARTNER_UID, 'mine'), validTx({ id: 'mine' })));
+  await assertFails(getDoc(doc(db, 'users', OWNER_UID, 'meta', 'settings')));
+});
