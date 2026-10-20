@@ -2,7 +2,7 @@
 // ใช้ตรรกะคำนวณจริง (split-model.js) แต่เก็บรายการไว้ในหน่วยความจำ ชื่อและอีเมลสมมติทั้งหมด
 
 import {
-  sanitizeSplit, toSplitDoc, summarizeSplits, unseenCount,
+  sanitizeSplit, toSplitDoc, summarizeSplits, unseenCount, cleanNickname,
 } from '../js/split-model.js';
 import { newId } from '../js/model.js';
 import { todayISO, addDays } from '../js/format.js';
@@ -20,6 +20,7 @@ export class SplitService extends EventTarget {
     this.names = ['มะลิ', 'ต้น'];
     this.owner = ME;
     this.pending = false;
+    this.nicknames = { [THEM]: 'มะลิจัง' };
     const t = todayISO();
     const base = Date.now() - 86400000 * 3;
     const make = (n, fields) => sanitizeSplit(toSplitDoc({
@@ -36,7 +37,19 @@ export class SplitService extends EventTarget {
   whenSettled() { return Promise.resolve(); }
   get role() { return 'owner'; }
   get partner() { return THEM; }
-  nameOf(email) { return this.names[this.members.indexOf(email)] ?? ''; }
+  nameOf(email) {
+    if (email === ME) return 'ฉัน';
+    return (email === THEM && this.nicknames[ME]) || this.pairName(email);
+  }
+  pairName(email) { return this.names[this.members.indexOf(email)] ?? ''; }
+  get myNickname() { return this.nicknames[ME] ?? null; }
+  get nicknameForMe() { return this.nicknames[THEM] ?? null; }
+  async setNickname(value) {
+    const name = cleanNickname(value);
+    if (name) this.nicknames[ME] = name;
+    else delete this.nicknames[ME];
+    setTimeout(() => this.dispatchEvent(new CustomEvent('change')), 0);
+  }
   summary() { return summarizeSplits(this.entries, ME); }
   get unseen() { return unseenCount(this.entries, ME, this._seen ?? 0); }
   markSeen() { this._seen = Math.max(0, ...this.entries.map((e) => e.updatedAt)); }

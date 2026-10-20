@@ -142,6 +142,20 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ชื่อเล่น: เอกสาร id = อีเมลของคนตั้ง เก็บชื่อที่คนนั้นใช้เรียกอีกฝ่าย
+    // อ่านได้ทั้งสองคน (อีกฝ่ายจะเห็นว่าถูกเรียกว่าอะไร) แต่แก้ได้เฉพาะเอกสารของตัวเอง
+    match /pairs/{pairId}/nicknames/{setter} {
+      allow read: if isMember(pairId);
+      allow create, update: if isMember(pairId)
+        && request.auth.token.email == setter
+        && request.resource.data.keys().hasOnly(['name','updatedAt'])
+        && request.resource.data.keys().hasAll(['name','updatedAt'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 30
+        && request.resource.data.updatedAt is int;
+      allow delete: if isMember(pairId) && request.auth.token.email == setter;
+    }
+
     // ทุกอย่างที่เหลือปิดหมด
     match /{document=**} {
       allow read, write: if false;

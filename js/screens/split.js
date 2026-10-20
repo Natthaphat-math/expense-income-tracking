@@ -23,14 +23,21 @@ export function renderSplit(app) {
       pageHeader({
         kicker: split.status === 'ready' ? `ใช้ร่วมกับ ${them}` : 'ใช้ร่วมกันสองคน',
         title: 'หารกัน',
-        actions: [partnerMode
+        actions: [
+          split.status === 'ready'
+            ? el('button', {
+                class: 'round-btn', type: 'button', 'aria-label': `ตั้งชื่อเล่นให้${them}`,
+                onclick: () => editNickname(),
+              }, icon('pencil'))
+            : null,
+          partnerMode
           ? el('button', {
               class: 'round-btn', type: 'button', 'aria-label': 'ตั้งค่า',
               onclick: () => app.go('settings'),
             }, icon('sliders'))
           : el('button', {
               class: 'btn btn-small btn-tonal', type: 'button', onclick: () => app.back(),
-            }, 'เสร็จ')],
+            }, 'เสร็จ')].filter(Boolean),
       }),
       split.status === 'ready' ? ready(them) : notReady(),
     ];
@@ -390,6 +397,42 @@ export function renderSplit(app) {
         }, 'บันทึก'),
       ],
     });
+  }
+
+  /** ชื่อเล่นที่ฉันใช้เรียกอีกฝ่าย — ซิงก์ทุกเครื่อง และอีกฝ่ายเห็นว่าถูกเรียกว่าอะไร */
+  function editNickname() {
+    const partner = split.partner;
+    const original = split.pairName(partner);
+    const forMe = split.nicknameForMe;
+    const input = el('input', {
+      class: 'input', type: 'text', value: split.myNickname ?? '', placeholder: original,
+      maxlength: '30', 'aria-label': `ชื่อเล่นของ${original}`, autocomplete: 'off',
+    });
+    const handle = openSheet({
+      title: 'ชื่อเล่น',
+      body: el('div', { class: 'form' },
+        el('label', { class: 'field' },
+          el('span', { class: 'field-label' }, `ฉันเรียก${original}ว่า`),
+          input,
+          el('p', { class: 'field-hint' }, `เว้นว่างไว้ = ใช้ชื่อ “${original}” — ${original}จะเห็นชื่อนี้ด้วย`),
+        ),
+        el('p', { class: 'split-nick-them' }, forMe
+          ? `${original}เรียกฉันว่า “${forMe}”`
+          : `${original}ยังไม่ได้ตั้งชื่อเล่นให้ฉัน`),
+      ),
+      actions: [
+        el('button', { class: 'btn btn-ghost', type: 'button', onclick: () => handle.close() }, 'ยกเลิก'),
+        el('button', {
+          class: 'btn btn-primary', type: 'button',
+          onclick: () => {
+            handle.close();
+            split.setNickname(input.value);
+            toast(input.value.trim() ? `ตั้งชื่อเล่นว่า “${input.value.trim().slice(0, 30)}” แล้ว` : `ใช้ชื่อ “${original}” แล้ว`);
+          },
+        }, 'บันทึก'),
+      ],
+    });
+    setTimeout(() => input.focus(), 150);
   }
 
   function remove(entry) {

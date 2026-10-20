@@ -154,6 +154,15 @@ export function summarizeSplits(entries, me) {
   return { net, open, history };
 }
 
+export const MAX_NICKNAME = 30;
+
+/** ชื่อเล่น: ตัดอักขระควบคุมและช่องว่างเกิน ยาวไม่เกิน 30 ตัว — ว่าง = ไม่มี */
+export function cleanNickname(value) {
+  if (typeof value !== 'string') return null;
+  const name = value.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, MAX_NICKNAME).trim();
+  return name.length > 0 ? name : null;
+}
+
 /** รายการที่อีกฝ่ายเพิ่ม/แก้หลังจากที่เราเปิดดูครั้งล่าสุด */
 export function unseenCount(entries, me, seenAt) {
   return entries.filter((e) => !e.deleted && e.updatedBy !== me && e.updatedAt > seenAt).length;

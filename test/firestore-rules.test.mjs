@@ -314,3 +314,22 @@ test('หารกัน: อีกฝ่ายยังเข้าข้อม
   await assertFails(setDoc(txRef(db, PARTNER_UID, 'mine'), validTx({ id: 'mine' })));
   await assertFails(getDoc(doc(db, 'users', OWNER_UID, 'meta', 'settings')));
 });
+
+test('ชื่อเล่น: ตั้งได้เฉพาะของตัวเอง อีกฝ่ายอ่านได้ คนนอกเข้าไม่ได้', async () => {
+  await seedPair();
+  const nick = (db, setter) => doc(db, 'pairs', PAIR, 'nicknames', setter);
+  const ok = { name: 'ที่รัก', updatedAt: 1792000000000 };
+  await assertSucceeds(setDoc(nick(ownerDb(), OWNER), ok));
+  await assertSucceeds(getDoc(nick(partnerDb(), OWNER)));
+  await assertFails(setDoc(nick(partnerDb(), OWNER), ok));        // ตั้งแทนอีกฝ่ายไม่ได้
+  await assertSucceeds(setDoc(nick(partnerDb(), PARTNER), { name: 'หมีพูห์', updatedAt: 1792000000001 }));
+  await assertFails(setDoc(nick(ownerDb(), OWNER), { name: '', updatedAt: 1 }));
+  await assertFails(setDoc(nick(ownerDb(), OWNER), { name: 'x'.repeat(31), updatedAt: 1 }));
+  await assertFails(setDoc(nick(ownerDb(), OWNER), { name: 'ok', updatedAt: 1, extra: true }));
+  await assertFails(setDoc(nick(ownerDb(), OWNER), { name: 5, updatedAt: 1 }));
+  const stranger = env.authenticatedContext('x', { email: STRANGER, email_verified: true }).firestore();
+  await assertFails(getDoc(nick(stranger, OWNER)));
+  await assertFails(setDoc(nick(stranger, STRANGER), ok));
+  await assertSucceeds(deleteDoc(nick(ownerDb(), OWNER)));
+  await assertFails(deleteDoc(nick(ownerDb(), PARTNER)));
+});

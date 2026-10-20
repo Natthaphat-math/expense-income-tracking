@@ -105,3 +105,14 @@ test('unseen: counts only the other person\'s changes since last look', () => {
   assert.equal(unseenCount(list, A, T0), 1);
   assert.equal(unseenCount(list, A, T0 + 15), 0);
 });
+
+test('nickname: trimmed, control characters removed, 30 characters max, empty means none', async () => {
+  const { cleanNickname } = await import('../js/split-model.js');
+  assert.equal(cleanNickname('  ที่รัก  '), 'ที่รัก');
+  assert.equal(cleanNickname('หมี\u0000พูห์\n'), 'หมีพูห์');
+  assert.equal(cleanNickname('a   b'), 'a b');
+  assert.equal(cleanNickname('x'.repeat(40)).length, 30);
+  assert.equal(cleanNickname('   '), null);
+  assert.equal(cleanNickname(42), null);
+  assert.equal(cleanNickname('<img src=x onerror=alert(1)>'), '<img src=x onerror=alert(1)>'.slice(0, 30)); // แสดงผลด้วย textContent เสมอ
+});

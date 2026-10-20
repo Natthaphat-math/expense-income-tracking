@@ -1633,3 +1633,10 @@ body[data-screen="slips"] .app-root { padding-bottom: calc(var(--safe-bottom) + 
 .btn-danger-text { color: var(--danger); }
 body[data-screen="split"] .app-root { padding-bottom: calc(var(--safe-bottom) + 32px); }
 @media (min-width: 1000px) { .screen-split { max-width: 760px; } }
+.split-nick-them {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunk);
+  color: var(--ink-soft);
+}

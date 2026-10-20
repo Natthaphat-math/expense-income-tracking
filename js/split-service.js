@@ -7,7 +7,7 @@
 import { loadFirebase, watchAuth } from './remote.js';
 import { SPLIT_PAIR_ID, SYNC_ENABLED } from './firebase-config.js';
 import {
-  sanitizeSplit, toSplitDoc, summarizeSplits, unseenCount, isEmail,
+  sanitizeSplit, toSplitDoc, summarizeSplits, unseenCount, isEmail, cleanNickname,
 } from './split-model.js';
 import { newId } from './model.js';
 import { friendlyError } from './sync.js';
@@ -32,6 +32,8 @@ export class SplitService extends EventTarget {
     this.names = [];
     this.owner = null;
     this.entries = [];
+    /** อีเมลคนตั้ง → ชื่อที่คนนั้นใช้เรียกอีกฝ่าย */
+    this.nicknames = {};
     this.pending = false;
     this._unsub = null;
     this._settled = Promise.resolve();
@@ -59,7 +61,18 @@ export class SplitService extends EventTarget {
     return this.members.find((m) => m !== this.me) ?? null;
   }
 
+  /**
+   * ชื่อที่แสดงบนเครื่องนี้: ตัวเองเป็น "ฉัน" อีกฝ่ายใช้ชื่อเล่นที่เราตั้งให้
+   * ไม่มีก็ใช้ชื่อในเอกสารคู่ แล้วค่อยเป็นส่วนหน้าของอีเมล
+   */
   nameOf(email) {
+    if (email && email === this.me) return 'ฉัน';
+    if (email && email === this.partner && this.nicknames[this.me]) return this.nicknames[this.me];
+    return this.pairName(email);
+  }
+
+  /** ชื่อตั้งต้นจากเอกสารคู่ (ที่ตั้งใน console) */
+  pairName(email) {
     const name = this.names[this.members.indexOf(email)];
     if (typeof name === 'string' && name.trim()) return name.trim().slice(0, 40);
     return email ? email.split('@')[0] : '';
@@ -67,6 +80,29 @@ export class SplitService extends EventTarget {
 
   summary() {
     return summarizeSplits(this.entries, this.me);
+  }
+
+  /** ชื่อเล่นที่ฉันตั้งให้อีกฝ่าย / ที่อีกฝ่ายตั้งให้ฉัน */
+  get myNickname() {
+    return this.nicknames[this.me] ?? null;
+  }
+
+  get nicknameForMe() {
+    return this.nicknames[this.partner] ?? null;
+  }
+
+  /** ตั้งชื่อเล่นให้อีกฝ่าย — ว่าง = กลับไปใช้ชื่อเดิม */
+  async setNickname(value) {
+    const fb = await loadFirebase();
+    if (!fb || this.status !== 'ready') throw new Error('ยังเชื่อมต่อหารกันไม่ได้');
+    const { doc, setDoc, deleteDoc } = fb.storeMod;
+    const ref = doc(fb.db, 'pairs', SPLIT_PAIR_ID, 'nicknames', this.me);
+    const name = cleanNickname(value);
+    const write = name ? setDoc(ref, { name, updatedAt: Date.now() }) : deleteDoc(ref);
+    write.catch((err) => {
+      this.lastError = friendlyError(err);
+      this.dispatchEvent(new CustomEvent('write-error', { detail: this.lastError }));
+    });
   }
 
   get unseen() {
@@ -108,6 +144,7 @@ export class SplitService extends EventTarget {
     this._unsub?.();
     this._unsub = null;
     this.entries = [];
+    this.nicknames = {};
     this.lastError = null;
     if (!this._resolveSettled) this._beginLoading();
 
@@ -148,13 +185,25 @@ export class SplitService extends EventTarget {
     this.names = Array.isArray(pair.names) ? pair.names.map((n) => (typeof n === 'string' ? n : '')) : [];
     this.owner = typeof pair.owner === 'string' ? pair.owner.toLowerCase() : null;
 
-    this._unsub = onSnapshot(collection(fb.db, 'pairs', SPLIT_PAIR_ID, 'splits'), (snap) => {
+    const stopSplits = onSnapshot(collection(fb.db, 'pairs', SPLIT_PAIR_ID, 'splits'), (snap) => {
       this.entries = snap.docs.map((d) => sanitizeSplit(d.data(), this.members)).filter(Boolean);
       this.pending = snap.metadata.hasPendingWrites;
       this.status = 'ready';
       this._finishLoading();
       this._emit();
     }, (err) => this._fail(err));
+    const stopNicknames = onSnapshot(collection(fb.db, 'pairs', SPLIT_PAIR_ID, 'nicknames'), (snap) => {
+      const next = {};
+      for (const d of snap.docs) {
+        const setter = d.id.toLowerCase();
+        const name = cleanNickname(d.data()?.name);
+        // รับเฉพาะของสองคนในคู่ — ข้อมูลจาก Firestore ถือว่าไม่น่าเชื่อถือเสมอ
+        if (name && this.members.includes(setter)) next[setter] = name;
+      }
+      this.nicknames = next;
+      if (this.status === 'ready') this._emit();
+    }, (err) => console.warn('หารกัน: อ่านชื่อเล่นไม่ได้', err));
+    this._unsub = () => { stopSplits(); stopNicknames(); };
   }
 
   // ------------------------------------------------------------ เขียน
