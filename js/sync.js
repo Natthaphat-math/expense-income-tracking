@@ -213,7 +213,8 @@ export class SyncManager extends EventTarget {
 export function friendlyError(err) {
   const code = err?.code ?? '';
   if (code === 'permission-denied' || code === 'auth/unauthorized-domain') {
-    return 'บัญชีนี้ไม่มีสิทธิ์เข้าถึงข้อมูล — ตรวจอีเมลในกฎของ Firestore อีกครั้ง';
+    return 'บัญชีนี้ไม่มีสิทธิ์เข้าถึงข้อมูลส่วนตัว — ถ้าเป็นเจ้าของ ตรวจอีเมลในกฎของ Firestore; '
+      + 'ถ้าใช้เฉพาะหารกัน ตรวจว่ามีเอกสาร pairs/main และอีเมลนี้อยู่ใน members (ตัวพิมพ์เล็ก) แล้วปิดเปิดแอปใหม่';
   }
   if (code === 'unavailable' || code === 'auth/network-request-failed') {
     return 'ต่ออินเทอร์เน็ตไม่ได้ จะลองใหม่ให้อัตโนมัติ';

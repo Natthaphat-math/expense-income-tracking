@@ -131,37 +131,38 @@
    ทุกคู่สีผ่าน 4.5:1 (ตัวหนังสือ) และ 3:1 (ไอคอน แท่งกราฟ ขอบ) เหมือนโหมดสว่าง
    สองบล็อกนี้ต้องตรงกันเสมอ */
 :root[data-theme="dark"] {
-  --bg: #101217;
-  --surface: #1a1d24;
-  --surface-sunk: #242832;
-  --ink: #eceef3;
-  --ink-soft: #a6acba;
-  --ink-faint: #9da3b1;
-  --line: #2c313c;
+  --bg: #000000;
+  --surface: #1c1c1e;
+  --surface-sunk: #2c2c2e;
+  --ink: #f2f2f7;
+  --ink-soft: #aeaeb2;
+  --ink-faint: #98989f;
+  --line: #38383a;
   --income: #4cc9a8;
   --income-soft: #13322b;
   --expense: #e3957a;
   --expense-soft: #36241e;
   --accent: #8eacff;
-  --accent-soft: #1f2b4a;
+  --accent-soft: #1c2a4d;
   --danger: #ff8f80;
   --danger-soft: #3b2220;
   --warn: #e6b65c;
   --warn-soft: #312812;
   --warn-line: #4d3d18;
-  --week-bar: #737b8e;
-  --week-future: #2c313c;
-  --outline: #737b8e;
+  --week-bar: #8e8e93;
+  --week-future: #2c2c2e;
+  --outline: #8e8e93;
+  --series-1: #9171b5;
   --chart-other: #7d8290;
-  --chart-none: #555b67;
-  --chart-none-line: #8a909c;
+  --chart-none: #5a5a60;
+  --chart-none-line: #98989f;
   --on-accent: #0d1428;
   --on-danger: #2a0d09;
   --on-income: #04221b;
   --toast-bg: rgba(236, 238, 243, .95);
   --toast-ink: #14161c;
-  --veil: rgba(16, 18, 23, .92);
-  --bar-bg: rgba(26, 29, 36, .94);
+  --veil: rgba(0, 0, 0, .86);
+  --bar-bg: rgba(18, 18, 20, .92);
   --shadow: 0 1px 2px rgba(0, 0, 0, .35);
   --tone-orange-bg: #3d2618; --tone-orange: #ffab7a;
   --tone-green-bg: #1f3319;  --tone-green: #9fd68a;
@@ -170,42 +171,43 @@
   --tone-teal-bg: #12322b;   --tone-teal: #5fd3b4;
   --tone-pink-bg: #3d1c27;   --tone-pink: #ff9bb8;
   --tone-amber-bg: #352a10;  --tone-amber: #f0c565;
-  --tone-slate-bg: #272c37;  --tone-slate: #b4bbca;
+  --tone-slate-bg: #2c2c2e;  --tone-slate: #b4bbca;
   color-scheme: dark;
 }
 @media (prefers-color-scheme: dark) {
   :root[data-theme="auto"] {
-    --bg: #101217;
-    --surface: #1a1d24;
-    --surface-sunk: #242832;
-    --ink: #eceef3;
-    --ink-soft: #a6acba;
-    --ink-faint: #9da3b1;
-    --line: #2c313c;
+    --bg: #000000;
+    --surface: #1c1c1e;
+    --surface-sunk: #2c2c2e;
+    --ink: #f2f2f7;
+    --ink-soft: #aeaeb2;
+    --ink-faint: #98989f;
+    --line: #38383a;
     --income: #4cc9a8;
     --income-soft: #13322b;
     --expense: #e3957a;
     --expense-soft: #36241e;
     --accent: #8eacff;
-    --accent-soft: #1f2b4a;
+    --accent-soft: #1c2a4d;
     --danger: #ff8f80;
     --danger-soft: #3b2220;
     --warn: #e6b65c;
     --warn-soft: #312812;
     --warn-line: #4d3d18;
-    --week-bar: #737b8e;
-    --week-future: #2c313c;
-    --outline: #737b8e;
+    --week-bar: #8e8e93;
+    --week-future: #2c2c2e;
+    --outline: #8e8e93;
+    --series-1: #9171b5;
     --chart-other: #7d8290;
-    --chart-none: #555b67;
-    --chart-none-line: #8a909c;
+    --chart-none: #5a5a60;
+    --chart-none-line: #98989f;
     --on-accent: #0d1428;
     --on-danger: #2a0d09;
     --on-income: #04221b;
     --toast-bg: rgba(236, 238, 243, .95);
     --toast-ink: #14161c;
-    --veil: rgba(16, 18, 23, .92);
-    --bar-bg: rgba(26, 29, 36, .94);
+    --veil: rgba(0, 0, 0, .86);
+    --bar-bg: rgba(18, 18, 20, .92);
     --shadow: 0 1px 2px rgba(0, 0, 0, .35);
     --tone-orange-bg: #3d2618; --tone-orange: #ffab7a;
     --tone-green-bg: #1f3319;  --tone-green: #9fd68a;
@@ -214,7 +216,7 @@
     --tone-teal-bg: #12322b;   --tone-teal: #5fd3b4;
     --tone-pink-bg: #3d1c27;   --tone-pink: #ff9bb8;
     --tone-amber-bg: #352a10;  --tone-amber: #f0c565;
-    --tone-slate-bg: #272c37;  --tone-slate: #b4bbca;
+    --tone-slate-bg: #2c2c2e;  --tone-slate: #b4bbca;
     color-scheme: dark;
   }
 }
@@ -1713,3 +1715,20 @@ body.has-split-select[data-screen="split"] .app-root { padding-bottom: calc(var(
 body.has-split-select .toast-host { bottom: calc(var(--safe-bottom) + 140px); }
 .split-row.tx-row-selected { box-shadow: none; }
 .split-add-row .split-add { white-space: nowrap; font-size: 15.5px; }
+
+/* ------------------------------------------------- หารกัน: แยกตามทิศ */
+.split-breakdown { margin-top: 2px; font-size: 14px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.split-select-all { display: flex; justify-content: flex-end; margin: 10px 0 -14px; }
+.split-new {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 12px;
+  font-weight: 700;
+  vertical-align: 2px;
+}
+.split-select-actions { grid-template-columns: 0.8fr 1fr 1.4fr; }
+.split-select-actions .btn { display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding-inline: 8px; white-space: nowrap; }

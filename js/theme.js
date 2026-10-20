@@ -9,7 +9,7 @@ export const THEMES = [
   { id: 'auto', label: 'ตามเครื่อง' },
 ];
 
-const BAR_COLOR = { light: '#f5f6fa', dark: '#101217' };
+const BAR_COLOR = { light: '#f5f6fa', dark: '#000000' };
 
 export function getTheme() {
   try {

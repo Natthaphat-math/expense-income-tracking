@@ -106,7 +106,7 @@ export class SplitService extends EventTarget {
   }
 
   get unseen() {
-    return unseenCount(this.entries, this.me, this._seenAt());
+    return unseenCount(this.entries, this.me, this.seenAt());
   }
 
   markSeen() {
@@ -114,7 +114,7 @@ export class SplitService extends EventTarget {
     try { localStorage.setItem(SEEN_KEY, String(latest)); } catch { /* ไม่เป็นไร */ }
   }
 
-  _seenAt() {
+  seenAt() {
     try { return Number(localStorage.getItem(SEEN_KEY)) || 0; } catch { return 0; }
   }
 
@@ -185,7 +185,9 @@ export class SplitService extends EventTarget {
     this.names = Array.isArray(pair.names) ? pair.names.map((n) => (typeof n === 'string' ? n : '')) : [];
     this.owner = typeof pair.owner === 'string' ? pair.owner.toLowerCase() : null;
 
-    const stopSplits = onSnapshot(collection(fb.db, 'pairs', SPLIT_PAIR_ID, 'splits'), (snap) => {
+    // includeMetadataChanges: รู้ด้วยว่าการเขียนที่รอส่ง ส่งถึงเซิร์ฟเวอร์แล้ว (ข้อมูลไม่เปลี่ยนแต่สถานะเปลี่ยน)
+    // ไม่ใส่แล้วป้าย "ยังรอส่ง" จะค้างอยู่ทั้งที่ส่งไปแล้ว
+    const stopSplits = onSnapshot(collection(fb.db, 'pairs', SPLIT_PAIR_ID, 'splits'), { includeMetadataChanges: true }, (snap) => {
       this.entries = snap.docs.map((d) => sanitizeSplit(d.data(), this.members)).filter(Boolean);
       this.pending = snap.metadata.hasPendingWrites;
       this.status = 'ready';

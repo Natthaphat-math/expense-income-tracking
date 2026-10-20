@@ -1,11 +1,11 @@
 // หน้าหารกัน — ใครจ่ายแทนใคร ยอดค้างสุทธิ การโอนคืน (บางส่วนได้) และการเคลียร์
 
 import { el, replace } from '../dom.js';
-import { formatMoney, formatNumber, relativeDate, entryDayISO, todayISO } from '../format.js';
+import { formatMoney, formatNumber, relativeDate, entryDayISO, todayISO, monthNameShort } from '../format.js';
 import { normalizeAmount } from '../model.js';
 import { parseSplitText, SELF_WORDS } from '../split-parse.js';
 import { openSheet, openDatePicker, confirmDialog, toast, pageHeader } from '../ui.js';
-import { icon } from '../icons.js';
+import { icon, categoryTile } from '../icons.js';
 
 const HISTORY_LIMIT = 60;
 
@@ -50,7 +50,7 @@ export function renderSplit(app) {
     const text = {
       loading: 'กำลังเชื่อมต่อ…',
       off: 'เข้าสู่ระบบที่หน้าตั้งค่าก่อน แล้วรายการที่ใช้ร่วมกันจะขึ้นที่นี่',
-      none: 'บัญชีนี้ยังไม่ได้อยู่ในหารกัน — ต้องเพิ่มอีเมลในการตั้งค่า Firebase ก่อน',
+      none: `ไม่พบหารกันของ ${split.me ?? 'บัญชีนี้'} — ตรวจใน Firebase console ว่ามีเอกสาร pairs/main (collection “pairs” เอกสาร “main”) และอีเมลนี้อยู่ใน members แบบตัวพิมพ์เล็กตรงกันทุกตัว`,
       error: split.lastError ?? 'เชื่อมต่อไม่สำเร็จ',
     }[split.status] ?? '';
     return el('div', { class: 'empty' },
@@ -62,6 +62,11 @@ export function renderSplit(app) {
 
   function ready(them) {
     const { net, open, history } = split.summary();
+    // "ใหม่" = อีกฝ่ายเพิ่ม/แก้หลังจากที่ฉันเปิดดูครั้งก่อน — จำเวลานั้นไว้ตลอดการเปิดหน้านี้ครั้งนี้
+    // (หน้าถูกวาดใหม่ทุกครั้งที่ข้อมูลเปลี่ยน แต่ options ของหน้ายังเป็นตัวเดิม)
+    const visit = app.current.options ?? {};
+    visit.seenAt ??= split.seenAt();
+    state.seenAt = visit.seenAt;
     split.markSeen();
     const selectable = open.filter((e) => e.kind === 'item');
     // ตัดรายการที่ไม่อยู่แล้ว (ถูกเคลียร์/ลบจากอีกเครื่อง) ออกจากการเลือก
@@ -76,24 +81,24 @@ export function renderSplit(app) {
         el('button', { class: 'btn split-add', type: 'button', onclick: () => batchEntry() },
           icon('list', { size: 20 }), ' หลายบรรทัด'),
       ),
-      el('section', { class: 'split-section' },
-        el('div', { class: 'section-head split-open-head' },
-          el('h2', { class: 'section-title' }, 'ยังไม่เคลียร์'),
-          selectable.length > 0
-            ? el('button', {
-                class: 'btn btn-small btn-ghost', type: 'button',
-                onclick: () => {
-                  if (picked.length === selectable.length) state.selected.clear();
-                  else for (const e of selectable) state.selected.add(e.id);
-                  rerender();
-                },
-              }, picked.length === selectable.length ? 'ไม่เลือก' : `เลือกทั้งหมด (${formatNumber(selectable.length)})`)
-            : null,
-        ),
-        open.length === 0
-          ? el('p', { class: 'split-empty' }, 'ไม่มีรายการค้าง')
-          : el('ul', { class: 'tx-list' }, open.map((e) => row(e, false))),
-      ),
+      selectable.length > 0
+        ? el('div', { class: 'split-select-all' },
+            el('button', {
+              class: 'btn btn-small btn-ghost', type: 'button',
+              onclick: () => {
+                if (picked.length === selectable.length) state.selected.clear();
+                else for (const e of selectable) state.selected.add(e.id);
+                rerender();
+              },
+            }, picked.length === selectable.length ? 'ไม่เลือก' : `เลือกทั้งหมด (${formatNumber(selectable.length)})`),
+          )
+        : null,
+      open.length === 0
+        ? el('section', { class: 'split-section' },
+            el('div', { class: 'section-head' }, el('h2', { class: 'section-title' }, 'ยังไม่เคลียร์')),
+            el('p', { class: 'split-empty' }, 'ไม่มีรายการค้าง'),
+          )
+        : directionSections(open, them),
       history.length > 0
         ? el('section', { class: 'split-section' },
             el('button', {
@@ -116,6 +121,29 @@ export function renderSplit(app) {
       split.pending ? el('p', { class: 'footnote split-pending' }, 'มีรายการที่ยังรอส่ง — จะส่งให้เองเมื่อมีเน็ต') : null,
       picked.length > 0 ? selectBar(picked, net, them) : null,
     ];
+  }
+
+  /**
+   * แยกรายการค้างตามทิศ พร้อมยอดรวมแต่ละฝั่ง — อ่านทิศจากหัวข้อ ไม่ต้องพึ่งสีไอคอน
+   * การโอนที่ยังเหลือ (โอนเกิน) แยกไว้อีกกลุ่ม
+   */
+  function directionSections(open, them) {
+    const groups = [
+      { title: `${them} ค้างฉัน`, rows: open.filter((e) => e.kind === 'item' && e.creditor === split.me) },
+      { title: `ฉันค้าง ${them}`, rows: open.filter((e) => e.kind === 'item' && e.debtor === split.me) },
+      { title: 'โอนแล้ว ยังไม่ได้หัก', rows: open.filter((e) => e.kind === 'payment'), payments: true },
+    ];
+    return groups.filter((g) => g.rows.length > 0).map((g) => {
+      const total = g.rows.reduce((sum, e) => sum + e.remaining, 0);
+      return el('section', { class: 'split-section' },
+        el('div', { class: 'section-head' },
+          el('h2', { class: 'section-title' }, g.title),
+          el('span', { class: 'section-meta' },
+            `${formatNumber(g.rows.length)} รายการ · ${formatMoney(Math.round(total * 100) / 100)}`),
+        ),
+        el('ul', { class: 'tx-list' }, g.rows.map((e) => row(e, false))),
+      );
+    });
   }
 
   /** ยอดสุทธิของรายการที่เลือก จากมุมของฉัน (บวก = อีกฝ่ายค้างฉัน) */
@@ -146,10 +174,39 @@ export function renderSplit(app) {
           onclick: () => { state.selected.clear(); rerender(); },
         }, 'ล้าง'),
         el('button', {
+          class: 'btn', type: 'button', onclick: () => shareSummary(picked, them),
+        }, icon('share', { size: 18 }), ' ส่งสรุป'),
+        el('button', {
           class: 'btn btn-primary', type: 'button', onclick: () => clearSelected(picked, net, them),
         }, 'เคลียร์ที่เลือก'),
       ),
     );
+  }
+
+  /** ข้อความสรุปรายการที่เลือก ส่งต่อทาง LINE ฯลฯ ผ่านแผ่นแชร์ของ iOS (ไม่มีก็คัดลอกให้) */
+  async function shareSummary(picked, them) {
+    const value = netOf(picked);
+    const oldestFirst = [...picked].sort((a, b) => a.date.localeCompare(b.date));
+    const lines = oldestFirst.map((e) => {
+      const who = e.debtor === split.me ? 'ฉันค้าง' : `${them}ค้าง`;
+      // วันที่จริง ไม่ใช่ "เมื่อวาน" — อีกฝ่ายอาจอ่านวันอื่น
+      return `• ${dayMonth(e.date)} ${e.name} ${formatNumber(e.remaining)} (${who})`;
+    });
+    const text = [`หารกัน · ${formatNumber(picked.length)} รายการ`, ...lines, `รวม: ${owesText(value, them)}`].join('\n');
+    try {
+      if (navigator.share) {
+        await navigator.share({ text });
+        return;
+      }
+    } catch (err) {
+      if (err?.name === 'AbortError') return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('คัดลอกสรุปแล้ว — วางในแชตได้เลย');
+    } catch {
+      toast('ส่งสรุปไม่ได้บนเครื่องนี้');
+    }
   }
 
   async function copyAmount(value) {
@@ -212,6 +269,7 @@ export function renderSplit(app) {
       el('p', { class: 'hero-label' }, headline),
       el('p', { class: 'hero-amount' },
         formatNumber(Math.abs(net)), el('span', { class: 'hero-unit' }, ' บาท')),
+      breakdown(open, them),
       net !== 0 || open.length > 0
         ? el('div', { class: 'split-balance-actions' },
             net !== 0
@@ -227,29 +285,50 @@ export function renderSplit(app) {
     );
   }
 
+  /** ถ้าค้างกันทั้งสองทาง บอกที่มาของยอดสุทธิ */
+  function breakdown(open, them) {
+    const sum = (list) => Math.round(list.reduce((t, e) => t + e.remaining, 0) * 100) / 100;
+    const theyOwe = sum(open.filter((e) => e.kind === 'item' && e.creditor === split.me));
+    const iOwe = sum(open.filter((e) => e.kind === 'item' && e.debtor === split.me));
+    const paid = open.filter((e) => e.kind === 'payment');
+    if (!(theyOwe > 0 && iOwe > 0) && paid.length === 0) return null;
+    const parts = [];
+    if (theyOwe > 0) parts.push(`${them}ค้าง ${formatNumber(theyOwe)}`);
+    if (iOwe > 0) parts.push(`ฉันค้าง ${formatNumber(iOwe)}`);
+    for (const p of paid) parts.push(`${split.nameOf(p.debtor)}โอนเกิน ${formatNumber(p.remaining)}`);
+    return el('p', { class: 'split-breakdown' }, `${parts.join(' · ')} → หักลบกันแล้ว`);
+  }
+
   function row(e, inHistory) {
     const payer = split.nameOf(e.creditor);
     const debtor = split.nameOf(e.debtor);
     const isPayment = e.kind === 'payment';
-    const mineToPay = e.debtor === split.me;
     const title = isPayment ? `${debtor} โอนคืน${e.name ? ` · ${e.name}` : ''}` : e.name;
     let sub;
+    // ในประวัติไม่มีหัวข้อแยกทิศ จึงบอกทิศไว้ต้นบรรทัดรอง
+    const direction = isPayment ? '' : `${e.debtor === split.me ? `ฉันค้าง ${payer}` : `${debtor} ค้างฉัน`} · `;
     if (inHistory && e.clearedBy === 'used') {
       sub = `หักยอดค้างหมดแล้ว · ${relativeDate(e.date)}`;
     } else if (inHistory) {
-      sub = e.clearedBy === 'payment'
+      sub = direction + (e.clearedBy === 'payment'
         ? `โอนคืนครบแล้ว · ${relativeDate(e.date)}`
-        : `เคลียร์โดย ${split.nameOf(e.settledBy) || '—'}${e.settledAt ? ` · ${relativeDate(isoOf(e.settledAt))}` : ''}`;
+        : `เคลียร์โดย ${split.nameOf(e.settledBy) || '—'}${e.settledAt ? ` · ${relativeDate(isoOf(e.settledAt))}` : ''}`);
     } else if (isPayment) {
       sub = `ให้ ${payer} · ${relativeDate(e.date)} · ยังไม่ได้หัก ${formatNumber(e.remaining)}`;
     } else {
-      const parts = [`${payer} จ่าย`, relativeDate(e.date)];
-      if (e.total && e.total > e.amount) parts.push(`จากทั้งหมด ${formatNumber(e.total)}`);
-      if (e.partly) parts.push(`โอนคืนแล้วบางส่วน`);
+      // ทิศอยู่ที่หัวข้อแล้ว บรรทัดรองจึงบอกแค่วันที่และรายละเอียดเพิ่มเติม
+      const parts = [relativeDate(e.date)];
+      if (e.total && e.total > e.amount) parts.push(`หารจาก ${formatNumber(e.total)}`);
+      if (e.partly) parts.push(`โอนคืนแล้ว ${formatNumber(e.amount - e.remaining)} จาก ${formatNumber(e.amount)}`);
       sub = parts.join(' · ');
     }
+    // อีกฝ่ายแก้รายการที่ฉันสร้าง — บอกให้รู้
+    if (!inHistory && e.updatedBy !== split.me && e.createdBy === split.me && e.updatedAt > e.createdAt + 1000) {
+      sub = `${sub} · แก้โดย ${split.nameOf(e.updatedBy)}`;
+    }
+    const isNew = !inHistory && e.updatedBy !== split.me && e.updatedAt > (state.seenAt ?? 0);
     const amountText = formatNumber(inHistory || isPayment ? e.amount : e.remaining);
-    const amountLabel = isPayment ? 'โอนแล้ว' : `${mineToPay ? 'ฉัน' : debtor}ค้าง`;
+    const amountLabel = isPayment ? 'ยังไม่ได้หัก' : 'บาท';
 
     const isSelected = !inHistory && state.selected.has(e.id);
     return el('li', { class: `tx-row split-row ${inHistory ? 'is-history' : ''} ${isSelected ? 'tx-row-selected' : ''}` },
@@ -272,10 +351,12 @@ export function renderSplit(app) {
         class: 'tx-button', type: 'button',
         onclick: () => (isPayment ? recordPayment(0, e) : editItem(e)),
       },
-        el('span', { class: `tile tile-md ${isPayment ? 'tone-teal' : mineToPay ? 'tone-orange' : 'tone-blue'}`, 'aria-hidden': 'true' },
-          icon(isPayment ? 'repeat' : 'receipt')),
+        isPayment
+          ? el('span', { class: 'tile tile-md tone-teal', 'aria-hidden': 'true' }, icon('repeat'))
+          : categoryTile(e.name, 'DE'),
         el('span', { class: 'tx-main' },
-          el('span', { class: 'tx-name' }, title),
+          el('span', { class: 'tx-name' }, title,
+            isNew ? el('span', { class: 'split-new' }, 'ใหม่') : null),
           el('span', { class: 'tx-sub' }, sub),
         ),
         el('span', { class: 'split-amount' },
@@ -729,6 +810,12 @@ export function renderSplit(app) {
 
   rerender();
   return host;
+}
+
+/** "20 ต.ค." */
+function dayMonth(iso) {
+  const [, m, d] = iso.split('-').map(Number);
+  return `${d} ${monthNameShort(m)}`;
 }
 
 function isoOf(ms) {
