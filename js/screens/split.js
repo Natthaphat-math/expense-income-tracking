@@ -232,18 +232,19 @@ export function renderSplit(app) {
     });
     if (picked.length > 8) lines.push(`และอีก ${formatNumber(picked.length - 8)} รายการ`);
     const after = Math.round((net - value) * 100) / 100;
-    const ok = await confirmDialog({
-      title: `เคลียร์ ${formatNumber(picked.length)} รายการ?`,
-      message: `${lines.join('\n')}\n\nรวม: ${owesText(value, them)}\nหลังเคลียร์: ${after === 0 ? 'ไม่มียอดค้าง' : owesText(after, them)}`,
-      confirmText: 'เคลียร์ที่เลือก',
-      cancelText: 'ยังก่อน',
-    });
-    if (!ok) return;
+    const how = await askHow(`เคลียร์ ${formatNumber(picked.length)} รายการ?`,
+      `${lines.join('\n')}\n\nรวม: ${owesText(value, them)}\nหลังเคลียร์: ${after === 0 ? 'ไม่มียอดค้าง' : owesText(after, them)}`);
+    if (!how) return;
 
     const writes = [];
     const undo = [];
     for (const e of picked) {
-      if (e.partly) {
+      const before = split.byId(e.id);
+      if (!e.partly) {
+        writes.push({ ...before, settled: true, settledBy: null, settledAt: null, settledAs: how });
+        undo.push({ id: e.id, before });
+      } else if (how === 'paid') {
+        // โอนส่วนที่เหลือแล้ว — บันทึกเป็นการโอน รายการจึงถูกหักครบเอง
         const payment = split.draft({
           kind: 'payment', debtor: e.debtor, creditor: e.creditor, amount: e.remaining,
           name: `เคลียร์ ${e.name}`.slice(0, 200), date: entryDayISO(),
@@ -251,14 +252,50 @@ export function renderSplit(app) {
         writes.push(payment);
         undo.push({ id: payment.id, before: null });
       } else {
-        const before = split.byId(e.id);
-        writes.push({ ...before, settled: true, settledBy: null, settledAt: null });
+        // ไม่ต้องคืนส่วนที่เหลือ — ลดรายการเหลือเท่าที่โอนมาแล้ว (ถูกหักครบ) และเก็บส่วนที่ยกให้แยกไว้
+        writes.push({ ...before, amount: Math.round((e.amount - e.remaining) * 100) / 100 });
         undo.push({ id: e.id, before });
+        const gift = split.draft({
+          kind: 'item', debtor: e.debtor, creditor: e.creditor, amount: e.remaining, total: null,
+          name: `${e.name} (ส่วนที่ไม่ต้องคืน)`.slice(0, 200), date: e.date,
+          settled: true, settledAs: 'forgiven',
+        });
+        writes.push(gift);
+        undo.push({ id: gift.id, before: null });
       }
     }
     state.selected.clear();
     split.save(writes);
-    app.notifyUndoable(`เคลียร์ ${formatNumber(picked.length)} รายการแล้ว`, undo, (u) => split.revert(u));
+    app.notifyUndoable(`${how === 'forgiven' ? 'ไม่ต้องคืน' : 'เคลียร์'} ${formatNumber(picked.length)} รายการแล้ว`,
+      undo, (u) => split.revert(u));
+  }
+
+  /**
+   * เคลียร์แบบไหน — โอนกันแล้ว หรือ ไม่ต้องคืน (ยกให้)
+   * @returns {Promise<'paid'|'forgiven'|null>}
+   */
+  function askHow(title, message) {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (value) => {
+        if (done) return;
+        done = true;
+        handle.close();
+        resolve(value);
+      };
+      const handle = openSheet({
+        title,
+        body: el('div', { class: 'form' },
+          el('p', { class: 'confirm-message' }, message),
+          el('button', { class: 'btn btn-primary btn-block split-how', type: 'button', onclick: () => finish('paid') },
+            el('strong', {}, 'โอนกันแล้ว'), el('span', {}, 'คืนเงินกันเรียบร้อย')),
+          el('button', { class: 'btn btn-block split-how', type: 'button', onclick: () => finish('forgiven') },
+            el('strong', {}, 'ไม่ต้องคืน'), el('span', {}, 'ยกให้ ไม่นับเป็นหนี้แล้ว')),
+          el('button', { class: 'btn btn-ghost btn-block', type: 'button', onclick: () => finish(null) }, 'ยังก่อน'),
+        ),
+        onClose: () => { if (!done) { done = true; resolve(null); } },
+      });
+    });
   }
 
   /** ยอดสุทธิ — บวก = อีกฝ่ายค้างฉัน */
@@ -312,7 +349,7 @@ export function renderSplit(app) {
     } else if (inHistory) {
       sub = direction + (e.clearedBy === 'payment'
         ? `โอนคืนครบแล้ว · ${relativeDate(e.date)}`
-        : `เคลียร์โดย ${split.nameOf(e.settledBy) || '—'}${e.settledAt ? ` · ${relativeDate(isoOf(e.settledAt))}` : ''}`);
+        : `${e.settledAs === 'forgiven' ? 'ไม่ต้องคืน · โดย' : 'โอนแล้ว · เคลียร์โดย'} ${split.nameOf(e.settledBy) || '—'}${e.settledAt ? ` · ${relativeDate(isoOf(e.settledAt))}` : ''}`);
     } else if (isPayment) {
       sub = `ให้ ${payer} · ${relativeDate(e.date)} · ยังไม่ได้หัก ${formatNumber(e.remaining)}`;
     } else {
@@ -368,9 +405,13 @@ export function renderSplit(app) {
   }
 
   // ------------------------------------------------------------ การกระทำ
-  function settle(list) {
+  function settle(list, how = 'paid') {
     const undo = list.map((e) => ({ id: e.id, before: split.byId(e.id) }));
-    split.save(list.map((e) => ({ ...split.byId(e.id), settled: true, settledBy: null, settledAt: null })));
+    // การโอนคืนเป็นเงินที่ย้ายจริงเสมอ — "ไม่ต้องคืน" ใช้กับรายการที่ค้างเท่านั้น
+    split.save(list.map((e) => ({
+      ...split.byId(e.id), settled: true, settledBy: null, settledAt: null,
+      settledAs: e.kind === 'payment' ? 'paid' : how,
+    })));
     app.notifyUndoable(list.length === 1 ? `เคลียร์ “${list[0].name || 'โอนคืน'}” แล้ว` : `เคลียร์ ${formatNumber(list.length)} รายการแล้ว`,
       undo, (u) => split.revert(u));
   }
@@ -379,16 +420,41 @@ export function renderSplit(app) {
     // ทุกอย่างที่ยังไม่เคลียร์ — รวมการโอนที่หักรายการไปแล้ว (อยู่ในประวัติ) ด้วย
     // ไม่งั้นการโอนนั้นจะเหลือค้างเป็นยอดติดลบหลังเคลียร์รายการทั้งหมด
     const unsettled = split.entries.filter((e) => !e.settled && !e.deleted);
-    const ok = await confirmDialog({
-      title: `เคลียร์ทั้งหมด ${formatNumber(open.filter((e) => e.kind === 'item').length || open.length)} รายการ?`,
-      message: net === 0
+    const how = await askHow(`เคลียร์ทั้งหมด ${formatNumber(open.filter((e) => e.kind === 'item').length || open.length)} รายการ?`,
+      net === 0
         ? 'ทุกรายการจะย้ายไปอยู่ในเคลียร์แล้ว'
-        : `${net > 0 ? `${them} ค้างฉัน` : `ฉันค้าง ${them}`} ${formatMoney(Math.abs(net))}\nเคลียร์แล้วยอดค้างจะเป็น 0`,
-      confirmText: 'เคลียร์ทั้งหมด',
-    });
-    if (!ok) return;
+        : `${net > 0 ? `${them} ค้างฉัน` : `ฉันค้าง ${them}`} ${formatMoney(Math.abs(net))}\nเคลียร์แล้วยอดค้างจะเป็น 0`);
+    if (!how) return;
     state.selected.clear();
-    settle(unsettled);
+    if (how === 'paid') {
+      settle(unsettled);
+      return;
+    }
+    // ไม่ต้องคืน: รายการที่โอนคืนมาแล้วบางส่วน — ส่วนที่โอนมานับเป็นโอนแล้ว ส่วนที่เหลือนับเป็นยกให้
+    const writes = [];
+    const undo = [];
+    for (const raw of unsettled) {
+      const before = split.byId(raw.id);
+      const view = open.find((o) => o.id === raw.id);
+      undo.push({ id: raw.id, before });
+      if (raw.kind === 'item' && view?.partly) {
+        writes.push({ ...before, amount: Math.round((view.amount - view.remaining) * 100) / 100, settled: true, settledAs: 'paid', settledBy: null, settledAt: null });
+        const gift = split.draft({
+          kind: 'item', debtor: raw.debtor, creditor: raw.creditor, amount: view.remaining, total: null,
+          name: `${raw.name} (ส่วนที่ไม่ต้องคืน)`.slice(0, 200), date: raw.date, settled: true, settledAs: 'forgiven',
+        });
+        writes.push(gift);
+        undo.push({ id: gift.id, before: null });
+      } else {
+        const coveredByPayments = raw.kind === 'item' && !view;
+        writes.push({
+          ...before, settled: true, settledBy: null, settledAt: null,
+          settledAs: raw.kind === 'payment' || coveredByPayments ? 'paid' : 'forgiven',
+        });
+      }
+    }
+    split.save(writes);
+    app.notifyUndoable('ไม่ต้องคืนทั้งหมดแล้ว', undo, (u) => split.revert(u));
   }
 
   /** เพิ่ม/แก้รายการที่จ่ายแทนกัน */

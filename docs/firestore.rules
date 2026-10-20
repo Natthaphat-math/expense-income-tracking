@@ -98,7 +98,7 @@ service cloud.firestore {
     function validSplit(d, pairId) {
       let members = pairMembers(pairId);
       return d.keys().hasOnly(['id','kind','debtor','creditor','amount','total','name','date',
-                               'settled','settledBy','settledAt','createdBy','createdAt',
+                               'settled','settledBy','settledAt','settledAs','createdBy','createdAt',
                                'updatedAt','updatedBy','deleted'])
         && d.keys().hasAll(['id','kind','debtor','creditor','amount','name','date','settled',
                             'createdBy','createdAt','updatedAt','updatedBy','deleted'])
@@ -113,6 +113,8 @@ service cloud.firestore {
         && d.settled is bool
         && (!('settledBy' in d) || d.settledBy == null || d.settledBy in members)
         && (!('settledAt' in d) || d.settledAt == null || d.settledAt is int)
+        // เคลียร์แบบไหน: โอนกันแล้ว หรือ ไม่ต้องคืน
+        && (!('settledAs' in d) || d.settledAs == null || d.settledAs in ['paid','forgiven'])
         && d.createdBy in members
         && d.createdAt is int && d.updatedAt is int
         // คนที่แก้ต้องเป็นคนที่เข้าสู่ระบบอยู่จริง ปลอมชื่ออีกฝ่ายไม่ได้

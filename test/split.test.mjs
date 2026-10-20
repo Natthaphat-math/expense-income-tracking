@@ -116,3 +116,18 @@ test('nickname: trimmed, control characters removed, 30 characters max, empty me
   assert.equal(cleanNickname(42), null);
   assert.equal(cleanNickname('<img src=x onerror=alert(1)>'), '<img src=x onerror=alert(1)>'.slice(0, 30)); // แสดงผลด้วย textContent เสมอ
 });
+
+test('settledAs: paid by default, forgiven kept, absent on open items', () => {
+  const open = toSplitDoc(item(B, A, 50, '2026-10-01'), A, T0 + 1);
+  assert.equal('settledAs' in open, false);
+  const paid = toSplitDoc({ ...item(B, A, 50, '2026-10-01'), settled: true }, A, T0 + 2);
+  assert.equal(paid.settledAs, 'paid');
+  const forgiven = toSplitDoc({ ...item(B, A, 50, '2026-10-01'), settled: true, settledAs: 'forgiven' }, A, T0 + 3);
+  assert.equal(forgiven.settledAs, 'forgiven');
+  assert.equal(sanitizeSplit(forgiven, MEMBERS).settledAs, 'forgiven');
+  // ของเก่าที่เคลียร์ก่อนมีฟิลด์นี้ = โอนแล้ว
+  const legacy = { ...paid };
+  delete legacy.settledAs;
+  assert.equal(sanitizeSplit(legacy, MEMBERS).settledAs, 'paid');
+  assert.equal(sanitizeSplit({ ...forgiven, settledAs: 'stolen' }, MEMBERS).settledAs, 'paid');
+});

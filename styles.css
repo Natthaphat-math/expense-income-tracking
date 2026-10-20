@@ -1732,3 +1732,6 @@ body.has-split-select .toast-host { bottom: calc(var(--safe-bottom) + 140px); }
 }
 .split-select-actions { grid-template-columns: 0.8fr 1fr 1.4fr; }
 .split-select-actions .btn { display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding-inline: 8px; white-space: nowrap; }
+.split-how { display: flex; flex-direction: column; align-items: center; gap: 0; line-height: 1.3; padding-block: 10px; }
+.split-how span { font-size: 13.5px; font-weight: 500; opacity: .9; }
+.split-row .tx-sub { overflow-wrap: anywhere; }

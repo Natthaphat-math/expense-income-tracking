@@ -333,3 +333,13 @@ test('ชื่อเล่น: ตั้งได้เฉพาะของต
   await assertSucceeds(deleteDoc(nick(ownerDb(), OWNER)));
   await assertFails(deleteDoc(nick(ownerDb(), PARTNER)));
 });
+
+test('หารกัน: settledAs รับเฉพาะ paid / forgiven', async () => {
+  await seedPair();
+  const db = partnerDb();
+  await assertSucceeds(setDoc(splitRef(db, 'f1'), split(PARTNER, { id: 'f1', settled: true, settledBy: PARTNER, settledAt: 1792000000000, settledAs: 'forgiven' })));
+  await assertSucceeds(setDoc(splitRef(db, 'f2'), split(PARTNER, { id: 'f2', settled: true, settledBy: PARTNER, settledAt: 1792000000000, settledAs: 'paid' })));
+  await assertSucceeds(setDoc(splitRef(db, 'f3'), split(PARTNER, { id: 'f3', settledAs: null })));
+  await assertFails(setDoc(splitRef(db, 'f4'), split(PARTNER, { id: 'f4', settled: true, settledAs: 'gift' })));
+  await assertFails(setDoc(splitRef(db, 'f5'), split(PARTNER, { id: 'f5', settled: true, settledAs: 1 })));
+});

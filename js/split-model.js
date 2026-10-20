@@ -54,6 +54,8 @@ export function sanitizeSplit(raw, members) {
     settled: d.settled === true,
     settledBy: members.includes(d.settledBy) ? d.settledBy : null,
     settledAt: stamp(d.settledAt) ? d.settledAt : null,
+    // รายการเก่า (ก่อนมีฟิลด์นี้) ที่เคลียร์แล้ว นับเป็นโอนแล้ว
+    settledAs: d.settled === true ? (d.settledAs === 'forgiven' ? 'forgiven' : 'paid') : null,
     createdBy: d.createdBy,
     createdAt: stamp(d.createdAt) ? d.createdAt : 0,
     updatedAt: stamp(d.updatedAt) ? d.updatedAt : 0,
@@ -64,7 +66,7 @@ export function sanitizeSplit(raw, members) {
 
 /** เอกสารที่จะเขียนลง Firestore — ฟิลด์ตรงกับกฎทุกตัว */
 export function toSplitDoc(entry, by, now = Date.now()) {
-  return {
+  const doc = {
     id: entry.id,
     kind: entry.kind,
     debtor: entry.debtor,
@@ -82,6 +84,9 @@ export function toSplitDoc(entry, by, now = Date.now()) {
     updatedBy: by,
     deleted: entry.deleted === true,
   };
+  // ส่งเฉพาะตอนเคลียร์แล้ว — รายการที่ยังค้างหน้าตาเหมือนเดิม (กฎเก่ายังรับได้)
+  if (doc.settled) doc.settledAs = entry.settledAs === 'forgiven' ? 'forgiven' : 'paid';
+  return doc;
 }
 
 export function isEmail(value) {
