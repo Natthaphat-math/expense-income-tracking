@@ -150,18 +150,41 @@ export function weekdayShort(iso) {
   return WEEKDAY_SHORT[fromISODate(iso).getDay()];
 }
 
-/** วันจันทร์ของสัปดาห์ที่วันนั้นอยู่ — สัปดาห์ของแอปเริ่มวันจันทร์ */
-export function startOfWeek(iso) {
+const WEEK_START_KEY = 'tet:week-start';
+
+/**
+ * วันแรกของสัปดาห์: 1 = จันทร์ (ค่าเริ่มต้น), 0 = อาทิตย์
+ * ตั้งแยกแต่ละเครื่องที่หน้าตั้งค่า (ไม่ซิงก์) — คนละคนชอบไม่เหมือนกันได้
+ */
+export function weekStartDay() {
+  try {
+    return globalThis.localStorage?.getItem(WEEK_START_KEY) === '0' ? 0 : 1;
+  } catch {
+    return 1;
+  }
+}
+
+export function setWeekStartDay(day) {
+  try { globalThis.localStorage?.setItem(WEEK_START_KEY, day === 0 ? '0' : '1'); } catch { /* ใช้ได้แค่รอบนี้ */ }
+}
+
+/** ชื่อย่อของวันเรียงตามวันแรกของสัปดาห์ที่ตั้งไว้ (ใช้หัวปฏิทิน) */
+export function weekdayLabels(start = weekStartDay()) {
+  return Array.from({ length: 7 }, (_, i) => WEEKDAY_SHORT[(start + i) % 7]);
+}
+
+/** วันแรกของสัปดาห์ที่วันนั้นอยู่ (จันทร์หรืออาทิตย์ ตามที่ตั้งไว้) */
+export function startOfWeek(iso, start = weekStartDay()) {
   const date = fromISODate(iso);
-  const offset = (date.getDay() + 6) % 7; // จันทร์ = 0
+  const offset = (date.getDay() - start + 7) % 7;
   date.setDate(date.getDate() - offset);
   return toISODate(date);
 }
 
-/** 7 วันของสัปดาห์ เริ่มวันจันทร์ */
-export function weekDays(iso) {
-  const monday = startOfWeek(iso);
-  return Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+/** 7 วันของสัปดาห์ เริ่มวันจันทร์หรืออาทิตย์ตามที่ตั้งไว้ */
+export function weekDays(iso, start = weekStartDay()) {
+  const first = startOfWeek(iso, start);
+  return Array.from({ length: 7 }, (_, i) => addDays(first, i));
 }
 
 /** "15 – 21 กันยายน 2026" (ย่อเดือน/ปีเมื่อซ้ำกัน) */

@@ -1,7 +1,7 @@
 // หน้าตั้งค่า — จัดการประเภท, งบเริ่มต้น, สำรองข้อมูล และนำเข้า
 
 import { el, replace } from '../dom.js';
-import { formatMoney, formatNumber, todayISO, shortDate } from '../format.js';
+import { formatMoney, formatNumber, todayISO, shortDate, weekStartDay, setWeekStartDay } from '../format.js';
 import {
   GROUPS, groupLabel, groupsForKind, budgetFor, targetWord, groupKind,
 } from '../model.js';
@@ -58,6 +58,16 @@ export function renderSettings(app) {
         }, t.label))),
       el('p', { class: 'field-hint' },
         'ตามเครื่อง = มืดเมื่อ iPhone/iPad ตั้งโหมดมืดไว้ · ตั้งแยกกันได้ในแต่ละเครื่อง'),
+      el('div', { class: 'field' },
+        el('span', { class: 'field-label' }, 'สัปดาห์เริ่มวัน'),
+        el('div', { class: 'seg seg-full', role: 'group', 'aria-label': 'สัปดาห์เริ่มวัน' },
+          [[1, 'จันทร์'], [0, 'อาทิตย์']].map(([day, label]) => el('button', {
+            class: `seg-item ${weekStartDay() === day ? 'seg-item-on' : ''}`, type: 'button',
+            'aria-pressed': weekStartDay() === day ? 'true' : 'false',
+            onclick: () => { setWeekStartDay(day); rerender(); },
+          }, label))),
+        el('p', { class: 'field-hint' }, 'ใช้กับกราฟสัปดาห์และปฏิทิน · ตั้งแยกแต่ละเครื่อง'),
+      ),
     );
   }
 

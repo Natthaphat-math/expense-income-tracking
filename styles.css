@@ -1665,3 +1665,51 @@ body[data-screen="split"] .app-root { padding-bottom: calc(var(--safe-bottom) + 
 .split-flip { flex: none; box-shadow: none; background: var(--surface-sunk); }
 .split-mode { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; border-radius: var(--radius-sm); padding: 12px 16px; }
 .split-mode span { font-size: 14px; font-weight: 400; color: var(--ink-soft); }
+
+/* ------------------------------------------------- หารกัน: เลือกรายการ */
+.split-open-head { align-items: center; }
+.split-tick-mark {
+  display: inline-grid;
+  place-items: center;
+  color: var(--on-accent);
+}
+.split-tick-mark.is-on { background: var(--accent); border-color: var(--accent); }
+.split-row.tx-row-selected { background: var(--accent-soft); }
+.split-select-bar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  padding-bottom: calc(12px + var(--safe-bottom));
+  padding-left: calc(16px + var(--safe-left));
+  padding-right: calc(16px + var(--safe-right));
+  background: var(--veil);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-top: 1px solid var(--line);
+}
+.split-select-sum { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.split-select-count { font-size: 14px; color: var(--ink-soft); }
+.split-select-total {
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.split-select-total .icon { color: var(--accent); }
+.split-select-actions { display: grid; grid-template-columns: 1fr 1.6fr; gap: 10px; }
+body.has-split-select[data-screen="split"] .app-root { padding-bottom: calc(var(--safe-bottom) + 150px); }
+@media (min-width: 1000px) {
+  .split-select-bar { padding-left: calc(50% - 380px + 16px); padding-right: calc(50% - 380px + 16px); }
+}
+body.has-split-select .toast-host { bottom: calc(var(--safe-bottom) + 140px); }
+.split-row.tx-row-selected { box-shadow: none; }
+.split-add-row .split-add { white-space: nowrap; font-size: 15.5px; }

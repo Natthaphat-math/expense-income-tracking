@@ -120,3 +120,21 @@ test('duplicates: amount tolerance, ±1 day, side, and differing categories', as
   assert.equal(findImported(all, { ref: '004:ABCDEF123' })?.id, 's');
   assert.equal(findImported(all, { ref: '004:OTHER1234', hash: null }), null);
 });
+
+test('week start: Monday by default, Sunday when chosen', async () => {
+  const { weekDays, weekdayLabels, setWeekStartDay, weekStartDay } = await import('../js/format.js');
+  const store = new Map();
+  globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)) };
+  try {
+    assert.equal(weekStartDay(), 1);
+    assert.equal(weekDays('2026-10-22')[0], '2026-10-19');      // พฤหัสฯ → สัปดาห์เริ่มจันทร์ 19
+    assert.equal(weekdayLabels()[0], 'จ');
+    setWeekStartDay(0);
+    assert.equal(weekDays('2026-10-22')[0], '2026-10-18');      // เริ่มอาทิตย์ 18
+    assert.equal(weekDays('2026-10-18')[0], '2026-10-18');      // วันอาทิตย์เป็นวันแรกของตัวเอง
+    assert.equal(weekdayLabels()[0], 'อา');
+    assert.equal(weekdayLabels()[6], 'ส');
+  } finally {
+    delete globalThis.localStorage;
+  }
+});

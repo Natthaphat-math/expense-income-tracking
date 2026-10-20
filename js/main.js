@@ -106,6 +106,7 @@ class App {
       this.stack = [{ name: 'split', options: {} }];
     }
     const { name, options } = this.current;
+    document.body.classList.remove('has-split-select');
     const screens = {
       day: renderDay,
       log: renderLog,

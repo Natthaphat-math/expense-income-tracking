@@ -5,7 +5,7 @@ import { el, replace } from './dom.js';
 import { icon, categoryTile } from './icons.js';
 import {
   todayISO, addDays, fromISODate, toISODate, monthName, monthNameShort,
-  longDate, relativeDate, monthKey, parseMonthKey,
+  longDate, relativeDate, monthKey, parseMonthKey, weekStartDay, weekdayLabels,
 } from './format.js';
 
 let sheetStack = [];
@@ -211,7 +211,7 @@ export function openDatePicker({ value, onSelect, title = 'เลือกวั
     replace(heading, `${monthName(month)} ${year}`);
 
     const first = new Date(year, month - 1, 1);
-    const lead = (first.getDay() + 6) % 7; // เริ่มสัปดาห์ที่วันจันทร์
+    const lead = (first.getDay() - weekStartDay() + 7) % 7; // จันทร์หรืออาทิตย์ตามที่ตั้งไว้
     const days = new Date(year, month, 0).getDate();
     const today = todayISO();
 
@@ -238,7 +238,7 @@ export function openDatePicker({ value, onSelect, title = 'เลือกวั
   };
 
   const weekdayRow = el('div', { class: 'cal-weekdays' },
-    ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'].map((d) => el('span', { class: 'cal-weekday' }, d)));
+    weekdayLabels().map((d) => el('span', { class: 'cal-weekday' }, d)));
 
   const body = el('div', { class: 'calendar' },
     el('div', { class: 'cal-shortcuts' },

@@ -11,7 +11,9 @@ const HISTORY_LIMIT = 60;
 
 export function renderSplit(app) {
   const split = app.split;
-  const state = { showHistory: false };
+  // การเลือกเก็บไว้ที่ app.state — หน้าจอถูกวาดใหม่ทุกครั้งที่อีกฝ่ายแก้ข้อมูล การเลือกต้องไม่หาย
+  app.state.splitSelected ??= new Set();
+  const state = { showHistory: app.state.splitShowHistory ?? false, selected: app.state.splitSelected };
   const host = el('div', { class: 'screen screen-split' });
   const partnerMode = split?.role === 'partner';
 
@@ -61,18 +63,32 @@ export function renderSplit(app) {
   function ready(them) {
     const { net, open, history } = split.summary();
     split.markSeen();
+    const selectable = open.filter((e) => e.kind === 'item');
+    // ตัดรายการที่ไม่อยู่แล้ว (ถูกเคลียร์/ลบจากอีกเครื่อง) ออกจากการเลือก
+    for (const id of [...state.selected]) if (!selectable.some((e) => e.id === id)) state.selected.delete(id);
+    const picked = selectable.filter((e) => state.selected.has(e.id));
+    document.body.classList.toggle('has-split-select', picked.length > 0);
     return [
       balanceCard(net, open, them),
       el('div', { class: 'split-add-row' },
         el('button', { class: 'btn btn-primary split-add', type: 'button', onclick: () => editItem(null) },
           icon('plus', { size: 20 }), ' เพิ่มรายการ'),
         el('button', { class: 'btn split-add', type: 'button', onclick: () => batchEntry() },
-          icon('list', { size: 20 }), ' พิมพ์หลายบรรทัด'),
+          icon('list', { size: 20 }), ' หลายบรรทัด'),
       ),
       el('section', { class: 'split-section' },
-        el('div', { class: 'section-head' },
+        el('div', { class: 'section-head split-open-head' },
           el('h2', { class: 'section-title' }, 'ยังไม่เคลียร์'),
-          open.length > 0 ? el('span', { class: 'section-meta' }, `${formatNumber(open.length)} รายการ`) : null,
+          selectable.length > 0
+            ? el('button', {
+                class: 'btn btn-small btn-ghost', type: 'button',
+                onclick: () => {
+                  if (picked.length === selectable.length) state.selected.clear();
+                  else for (const e of selectable) state.selected.add(e.id);
+                  rerender();
+                },
+              }, picked.length === selectable.length ? 'ไม่เลือก' : `เลือกทั้งหมด (${formatNumber(selectable.length)})`)
+            : null,
         ),
         open.length === 0
           ? el('p', { class: 'split-empty' }, 'ไม่มีรายการค้าง')
@@ -83,7 +99,11 @@ export function renderSplit(app) {
             el('button', {
               class: 'split-history-toggle', type: 'button',
               'aria-expanded': state.showHistory ? 'true' : 'false',
-              onclick: () => { state.showHistory = !state.showHistory; rerender(); },
+              onclick: () => {
+                state.showHistory = !state.showHistory;
+                app.state.splitShowHistory = state.showHistory;
+                rerender();
+              },
             },
               el('span', {}, `เคลียร์แล้ว (${formatNumber(history.length)})`),
               icon('chevronDown', { cls: `collapse-mark ${state.showHistory ? 'collapse-mark-open' : ''}` }),
@@ -94,7 +114,94 @@ export function renderSplit(app) {
           )
         : null,
       split.pending ? el('p', { class: 'footnote split-pending' }, 'มีรายการที่ยังรอส่ง — จะส่งให้เองเมื่อมีเน็ต') : null,
+      picked.length > 0 ? selectBar(picked, net, them) : null,
     ];
+  }
+
+  /** ยอดสุทธิของรายการที่เลือก จากมุมของฉัน (บวก = อีกฝ่ายค้างฉัน) */
+  function netOf(list) {
+    return Math.round(list.reduce((sum, e) => sum + (e.creditor === split.me ? e.remaining : -e.remaining), 0) * 100) / 100;
+  }
+
+  function owesText(value, them) {
+    if (value === 0) return 'หักลบกันพอดี';
+    return value > 0 ? `${them} ค้างฉัน ${formatMoney(value)}` : `ฉันค้าง ${them} ${formatMoney(-value)}`;
+  }
+
+  /** แถบล่างตอนเลือกรายการ: ยอดรวมของที่เลือก (แตะเพื่อคัดลอก) และปุ่มเคลียร์ */
+  function selectBar(picked, net, them) {
+    const value = netOf(picked);
+    return el('div', { class: 'split-select-bar', role: 'region', 'aria-label': 'รายการที่เลือก' },
+      el('div', { class: 'split-select-sum' },
+        el('span', { class: 'split-select-count' }, `เลือก ${formatNumber(picked.length)} รายการ`),
+        el('button', {
+          class: 'split-select-total', type: 'button',
+          'aria-label': `${owesText(value, them)} — แตะเพื่อคัดลอกยอด`,
+          onclick: () => copyAmount(Math.abs(value)),
+        }, owesText(value, them), value !== 0 ? icon('copy', { size: 16 }) : null),
+      ),
+      el('div', { class: 'split-select-actions' },
+        el('button', {
+          class: 'btn btn-ghost', type: 'button',
+          onclick: () => { state.selected.clear(); rerender(); },
+        }, 'ล้าง'),
+        el('button', {
+          class: 'btn btn-primary', type: 'button', onclick: () => clearSelected(picked, net, them),
+        }, 'เคลียร์ที่เลือก'),
+      ),
+    );
+  }
+
+  async function copyAmount(value) {
+    const text = String(value);
+    try {
+      await navigator.clipboard.writeText(text);
+      toast(`คัดลอก ${formatNumber(value)} แล้ว — วางในแอปธนาคารได้เลย`);
+    } catch {
+      toast(`ยอด ${formatNumber(value)} บาท`);
+    }
+  }
+
+  /**
+   * เคลียร์รายการที่เลือก — ถามก่อนเสมอ พร้อมสรุปยอด
+   * รายการที่โอนคืนมาบางส่วนแล้ว บันทึกเป็นการโอนส่วนที่เหลือแทนการติ๊ก
+   * (ไม่งั้นเงินที่โอนมาแล้วจะไปหักรายการอื่นซ้ำ) ยอดค้างจึงลดลงเท่ากับที่แสดงพอดี
+   */
+  async function clearSelected(picked, net, them) {
+    const value = netOf(picked);
+    const lines = picked.slice(0, 8).map((e) => {
+      const who = e.debtor === split.me ? 'ฉันค้าง' : `${them}ค้าง`;
+      return `• ${e.name} ${formatNumber(e.remaining)}${e.partly ? ` (เหลือจาก ${formatNumber(e.amount)})` : ''} · ${who}`;
+    });
+    if (picked.length > 8) lines.push(`และอีก ${formatNumber(picked.length - 8)} รายการ`);
+    const after = Math.round((net - value) * 100) / 100;
+    const ok = await confirmDialog({
+      title: `เคลียร์ ${formatNumber(picked.length)} รายการ?`,
+      message: `${lines.join('\n')}\n\nรวม: ${owesText(value, them)}\nหลังเคลียร์: ${after === 0 ? 'ไม่มียอดค้าง' : owesText(after, them)}`,
+      confirmText: 'เคลียร์ที่เลือก',
+      cancelText: 'ยังก่อน',
+    });
+    if (!ok) return;
+
+    const writes = [];
+    const undo = [];
+    for (const e of picked) {
+      if (e.partly) {
+        const payment = split.draft({
+          kind: 'payment', debtor: e.debtor, creditor: e.creditor, amount: e.remaining,
+          name: `เคลียร์ ${e.name}`.slice(0, 200), date: entryDayISO(),
+        });
+        writes.push(payment);
+        undo.push({ id: payment.id, before: null });
+      } else {
+        const before = split.byId(e.id);
+        writes.push({ ...before, settled: true, settledBy: null, settledAt: null });
+        undo.push({ id: e.id, before });
+      }
+    }
+    state.selected.clear();
+    split.save(writes);
+    app.notifyUndoable(`เคลียร์ ${formatNumber(picked.length)} รายการแล้ว`, undo, (u) => split.revert(u));
   }
 
   /** ยอดสุทธิ — บวก = อีกฝ่ายค้างฉัน */
@@ -144,15 +251,23 @@ export function renderSplit(app) {
     const amountText = formatNumber(inHistory || isPayment ? e.amount : e.remaining);
     const amountLabel = isPayment ? 'โอนแล้ว' : `${mineToPay ? 'ฉัน' : debtor}ค้าง`;
 
-    return el('li', { class: `tx-row split-row ${inHistory ? 'is-history' : ''}` },
-      // การโอนคืนไม่มีปุ่มเคลียร์ — หักรายการค้างให้เองแล้วย้ายไปประวัติ
+    const isSelected = !inHistory && state.selected.has(e.id);
+    return el('li', { class: `tx-row split-row ${inHistory ? 'is-history' : ''} ${isSelected ? 'tx-row-selected' : ''}` },
+      // วงกลม = เลือก (ยังไม่เคลียร์) — เคลียร์จริงที่แถบด้านล่าง ซึ่งถามก่อนเสมอ
+      // การโอนคืนเลือกไม่ได้ — หักรายการค้างให้เองแล้วย้ายไปประวัติ
       inHistory || isPayment
         ? null
         : el('button', {
             class: 'split-tick', type: 'button',
-            'aria-label': `เคลียร์แล้ว: ${title} ${formatMoney(e.remaining)}`,
-            onclick: () => tick(e),
-          }, el('span', { class: 'split-tick-mark', 'aria-hidden': 'true' })),
+            'aria-pressed': isSelected ? 'true' : 'false',
+            'aria-label': `เลือก: ${title} ${formatMoney(e.remaining)}`,
+            onclick: () => {
+              if (isSelected) state.selected.delete(e.id);
+              else state.selected.add(e.id);
+              rerender();
+            },
+          }, el('span', { class: `split-tick-mark ${isSelected ? 'is-on' : ''}`, 'aria-hidden': 'true' },
+            isSelected ? icon('check', { size: 16 }) : null)),
       el('button', {
         class: 'tx-button', type: 'button',
         onclick: () => (isPayment ? recordPayment(0, e) : editItem(e)),
@@ -179,29 +294,6 @@ export function renderSplit(app) {
       undo, (u) => split.revert(u));
   }
 
-  /**
-   * ติ๊กเคลียร์รายการ — ถ้าเคยโอนคืนมาบางส่วนแล้ว จะบันทึกเป็นการโอนส่วนที่เหลือแทน
-   * (ไม่งั้นเงินที่โอนมาแล้วจะไปหักรายการอื่นซ้ำ ยอดค้างจะเพี้ยน)
-   */
-  async function tick(e) {
-    if (!e.partly) {
-      settle([e]);
-      return;
-    }
-    const ok = await confirmDialog({
-      title: `เคลียร์ “${e.name}”?`,
-      message: `โอนคืนมาแล้ว ${formatMoney(e.amount - e.remaining)} จาก ${formatMoney(e.amount)}\nจะบันทึกว่าโอนส่วนที่เหลือ ${formatMoney(e.remaining)} แล้ว`,
-      confirmText: 'เคลียร์ส่วนที่เหลือ',
-    });
-    if (!ok) return;
-    const entry = split.draft({
-      kind: 'payment', debtor: e.debtor, creditor: e.creditor, amount: e.remaining,
-      name: `เคลียร์ ${e.name}`.slice(0, 200), date: entryDayISO(),
-    });
-    split.save([entry]);
-    app.notifyUndoable(`เคลียร์ “${e.name}” แล้ว`, [{ id: entry.id, before: null }], (u) => split.revert(u));
-  }
-
   async function settleAll(open, net, them) {
     // ทุกอย่างที่ยังไม่เคลียร์ — รวมการโอนที่หักรายการไปแล้ว (อยู่ในประวัติ) ด้วย
     // ไม่งั้นการโอนนั้นจะเหลือค้างเป็นยอดติดลบหลังเคลียร์รายการทั้งหมด
@@ -213,7 +305,9 @@ export function renderSplit(app) {
         : `${net > 0 ? `${them} ค้างฉัน` : `ฉันค้าง ${them}`} ${formatMoney(Math.abs(net))}\nเคลียร์แล้วยอดค้างจะเป็น 0`,
       confirmText: 'เคลียร์ทั้งหมด',
     });
-    if (ok) settle(unsettled);
+    if (!ok) return;
+    state.selected.clear();
+    settle(unsettled);
   }
 
   /** เพิ่ม/แก้รายการที่จ่ายแทนกัน */
