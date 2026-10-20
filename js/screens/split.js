@@ -1,8 +1,9 @@
 // หน้าหารกัน — ใครจ่ายแทนใคร ยอดค้างสุทธิ การโอนคืน (บางส่วนได้) และการเคลียร์
 
 import { el, replace } from '../dom.js';
-import { formatMoney, formatNumber, relativeDate, entryDayISO } from '../format.js';
+import { formatMoney, formatNumber, relativeDate, entryDayISO, todayISO } from '../format.js';
 import { normalizeAmount } from '../model.js';
+import { parseSplitText, SELF_WORDS } from '../split-parse.js';
 import { openSheet, openDatePicker, confirmDialog, toast, pageHeader } from '../ui.js';
 import { icon } from '../icons.js';
 
@@ -62,8 +63,12 @@ export function renderSplit(app) {
     split.markSeen();
     return [
       balanceCard(net, open, them),
-      el('button', { class: 'btn btn-primary btn-block split-add', type: 'button', onclick: () => editItem(null) },
-        icon('plus', { size: 20 }), ' เพิ่มรายการ'),
+      el('div', { class: 'split-add-row' },
+        el('button', { class: 'btn btn-primary split-add', type: 'button', onclick: () => editItem(null) },
+          icon('plus', { size: 20 }), ' เพิ่มรายการ'),
+        el('button', { class: 'btn split-add', type: 'button', onclick: () => batchEntry() },
+          icon('list', { size: 20 }), ' พิมพ์หลายบรรทัด'),
+      ),
       el('section', { class: 'split-section' },
         el('div', { class: 'section-head' },
           el('h2', { class: 'section-title' }, 'ยังไม่เคลียร์'),
@@ -433,6 +438,181 @@ export function renderSplit(app) {
       ],
     });
     setTimeout(() => input.focus(), 150);
+  }
+
+  // ------------------------------------------------------- พิมพ์หลายบรรทัด
+  const MODE_KEY = 'tet:split-name-means';
+
+  function nameMode() {
+    try {
+      const v = localStorage.getItem(MODE_KEY);
+      return v === 'debtor' || v === 'payer' ? v : null;
+    } catch { return null; }
+  }
+
+  /** ถามครั้งแรกว่าชื่อหน้าบรรทัดหมายถึงอะไร (เก็บแยกแต่ละเครื่อง เปลี่ยนได้ภายหลัง) */
+  function askNameMode(then) {
+    const them = split.nameOf(split.partner);
+    const pick = (mode) => {
+      try { localStorage.setItem(MODE_KEY, mode); } catch { /* ใช้ได้แค่รอบนี้ */ }
+      handle.close();
+      then(mode);
+    };
+    const handle = openSheet({
+      title: 'ชื่อหน้าบรรทัดหมายถึงใคร?',
+      body: el('div', { class: 'form' },
+        el('p', { class: 'confirm-message' }, `เวลาพิมพ์ “${them} 20 ข้าวเหนียว” หมายถึง…`),
+        el('button', { class: 'btn btn-block split-mode', type: 'button', onclick: () => pick('debtor') },
+          el('strong', {}, `${them} ค้างฉัน 20`), el('span', {}, 'ชื่อ = คนที่ต้องคืนเงิน')),
+        el('button', { class: 'btn btn-block split-mode', type: 'button', onclick: () => pick('payer') },
+          el('strong', {}, `${them} จ่ายไป 20 ฉันค้าง${them}`), el('span', {}, 'ชื่อ = คนที่ออกเงินให้')),
+        el('p', { class: 'field-hint' }, 'เปลี่ยนทีหลังได้ในหน้าพิมพ์หลายบรรทัด — ตั้งแยกกันได้ในแต่ละเครื่อง'),
+      ),
+    });
+  }
+
+  function batchEntry() {
+    const mode = nameMode();
+    if (!mode) {
+      askNameMode(() => batchEntry());
+      return;
+    }
+    const me = split.me;
+    const partner = split.partner;
+    const them = split.nameOf(partner);
+    const people = [
+      { email: partner, words: [split.pairName(partner), split.myNickname].filter(Boolean) },
+      { email: me, words: [split.pairName(me), split.nicknameForMe, ...SELF_WORDS].filter(Boolean) },
+    ];
+    const state = { date: entryDayISO(), flipped: new Set(), rows: [] };
+
+    const area = el('textarea', {
+      class: 'input textarea split-batch-input', rows: '5', 'aria-label': 'รายการ พิมพ์ทีละบรรทัด',
+      placeholder: `${them} 20 ข้าวเหนียว\nฉัน 30 ค่ารถ\n${them} 300 หมูกระทะ หาร\n${them} โอน 50`,
+      autocapitalize: 'off', spellcheck: 'false',
+    });
+    const cards = el('div', { class: 'split-batch-cards', role: 'status' });
+    const top = el('div', { class: 'split-batch-top' });
+    const saveButton = el('button', { class: 'btn btn-primary', type: 'button', onclick: () => saveBatch() }, 'บันทึก');
+    let timer = null;
+    area.addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(paint, 180);
+    });
+
+    const flip = (row) => (state.flipped.has(row.raw) && row.kind === 'item'
+      ? { ...row, debtor: row.creditor, creditor: row.debtor }
+      : row);
+
+    function paint() {
+      const m = nameMode() ?? 'debtor';
+      state.rows = parseSplitText(area.value, { people, mode: m, date: state.date, today: todayISO() }).map(flip);
+      replace(top,
+        el('button', {
+          class: 'picker-field', type: 'button',
+          onclick: () => openDatePicker({ value: state.date, onSelect: (iso) => { state.date = iso; paint(); } }),
+        },
+          el('span', { class: 'field-label' }, 'วันที่'),
+          el('span', { class: 'picker-field-value' }, relativeDate(state.date)),
+          icon('chevronRight', { size: 18, cls: 'picker-field-mark' }),
+        ),
+        el('div', { class: 'split-batch-mode' },
+          el('span', {}, m === 'debtor' ? 'ชื่อหน้าบรรทัด = คนที่ค้าง' : 'ชื่อหน้าบรรทัด = คนที่จ่ายไป'),
+          el('button', {
+            class: 'btn btn-small btn-ghost', type: 'button',
+            onclick: () => {
+              try { localStorage.setItem(MODE_KEY, m === 'debtor' ? 'payer' : 'debtor'); } catch { /* ไม่เป็นไร */ }
+              state.flipped.clear();
+              paint();
+            },
+          }, 'สลับ'),
+        ),
+      );
+      replace(cards, state.rows.map((row) => batchCard(row)));
+      const good = state.rows.filter((r) => r.ok).length;
+      saveButton.textContent = good > 0 ? `บันทึก ${formatNumber(good)} รายการ` : 'บันทึก';
+      saveButton.disabled = good === 0;
+    }
+
+    function batchCard(row) {
+      if (!row.ok) {
+        const why = {
+          who: `ไม่รู้ว่าใคร — ขึ้นต้นด้วยชื่อ เช่น “${them}” หรือ “ฉัน”`,
+          amount: 'ไม่พบยอดเงิน',
+          what: 'ยังไม่ได้บอกว่าจ่ายค่าอะไร',
+        }[row.error] ?? 'อ่านไม่ออก';
+        return el('div', { class: 'split-batch-card is-bad' },
+          el('span', { class: 'split-batch-raw' }, row.raw),
+          el('span', { class: 'split-batch-why' }, why),
+        );
+      }
+      const debtor = row.debtor === me ? 'ฉัน' : split.nameOf(row.debtor);
+      const creditor = row.creditor === me ? 'ฉัน' : split.nameOf(row.creditor);
+      const headline = row.kind === 'payment'
+        ? `${debtor} โอนคืนให้${creditor} ${formatMoney(row.amount)}`
+        : `${row.debtor === me ? `ฉันค้าง ${creditor}` : `${debtor} ค้างฉัน`} ${formatMoney(row.amount)}`;
+      const meta = [
+        row.kind === 'item' ? row.name : null,
+        row.half ? `หารครึ่งจาก ${formatNumber(row.total)}` : null,
+        row.date !== state.date ? relativeDate(row.date) : null,
+      ].filter(Boolean).join(' · ');
+      return el('div', { class: 'split-batch-card' },
+        el('div', { class: 'split-batch-text' },
+          el('strong', {}, headline),
+          meta ? el('span', {}, meta) : null,
+        ),
+        row.kind === 'item'
+          ? el('button', {
+              class: 'round-btn split-flip', type: 'button', 'aria-label': `สลับว่าใครค้างใคร: ${row.raw}`,
+              onclick: () => {
+                if (state.flipped.has(row.raw)) state.flipped.delete(row.raw);
+                else state.flipped.add(row.raw);
+                paint();
+              },
+            }, icon('repeat', { size: 18 }))
+          : null,
+      );
+    }
+
+    async function saveBatch() {
+      const good = state.rows.filter((r) => r.ok);
+      const bad = state.rows.length - good.length;
+      if (good.length === 0) return;
+      if (bad > 0) {
+        const ok = await confirmDialog({
+          title: `ข้าม ${formatNumber(bad)} บรรทัดที่อ่านไม่ออก?`,
+          message: `บันทึกเฉพาะ ${formatNumber(good.length)} รายการที่อ่านได้`,
+          confirmText: 'บันทึกที่อ่านได้',
+          cancelText: 'กลับไปแก้',
+        });
+        if (!ok) return;
+      }
+      const entries = good.map((r) => split.draft({
+        kind: r.kind, debtor: r.debtor, creditor: r.creditor, amount: r.amount,
+        total: r.total, name: r.name, date: r.date,
+      }));
+      handle.close();
+      split.save(entries);
+      app.notifyUndoable(`บันทึกแล้ว ${formatNumber(entries.length)} รายการ`,
+        entries.map((e) => ({ id: e.id, before: null })), (u) => split.revert(u));
+    }
+
+    const handle = openSheet({
+      title: 'พิมพ์หลายบรรทัด',
+      fullHeight: true,
+      body: el('div', { class: 'form split-batch' },
+        area,
+        el('p', { class: 'field-hint' }, 'บรรทัดละรายการ: ชื่อ ยอด สิ่งที่จ่าย · ต่อท้าย “หาร” = หารครึ่ง · “โอน 50” = โอนคืน · ใส่ “เมื่อวาน” ได้'),
+        top,
+        cards,
+      ),
+      actions: [
+        el('button', { class: 'btn btn-ghost', type: 'button', onclick: () => handle.close() }, 'ยกเลิก'),
+        saveButton,
+      ],
+    });
+    paint();
+    setTimeout(() => area.focus(), 150);
   }
 
   function remove(entry) {

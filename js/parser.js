@@ -51,7 +51,7 @@ function stripCurrency(text) {
 }
 
 // คำลงท้ายสุภาพจากการพูด เช่น "50 บาทค่ะ" — ไม่ใช่ชื่อประเภท
-const POLITE_ENDING = /\s*(ค่ะ|คะ|ครับ|คับ|จ้ะ|จ้า)$/;
+export const POLITE_ENDING = /\s*(ค่ะ|คะ|ครับ|คับ|จ้ะ|จ้า)$/;
 
 function stripTypePrefix(text) {
   return stripLeading(text.trim(), TYPE_PREFIXES).trim();
