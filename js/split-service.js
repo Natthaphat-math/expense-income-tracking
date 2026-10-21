@@ -14,6 +14,25 @@ import { newId } from './model.js';
 import { friendlyError } from './sync.js';
 
 const SEEN_KEY = 'tet:split-seen-at';
+const ROLE_KEY = 'tet:last-role';
+
+/**
+ * บทบาทครั้งล่าสุดบนเครื่องนี้ — ใช้ตอนเปิดแอป ก่อนเชื่อมต่อเสร็จ
+ * (อีกคนในหารกันจะได้เปิดมาที่หน้าหารกันเลย ไม่ต้องผ่านหน้ารายรับรายจ่าย)
+ */
+export function lastRole() {
+  try {
+    const v = localStorage.getItem(ROLE_KEY);
+    return v === 'owner' || v === 'partner' ? v : null;
+  } catch { return null; }
+}
+
+function rememberRole(role) {
+  try {
+    if (role) localStorage.setItem(ROLE_KEY, role);
+    else localStorage.removeItem(ROLE_KEY);
+  } catch { /* ไม่เป็นไร */ }
+}
 
 /**
  * status:
@@ -46,6 +65,8 @@ export class SplitService extends EventTarget {
   async start() {
     if (!SYNC_ENABLED) return;
     this._beginLoading();
+    // ยังไม่รู้ว่าเข้าสู่ระบบไหม — ถือว่ากำลังโหลด (หน้าจอแสดง "กำลังเชื่อมต่อ" แทน "ยังไม่ได้เข้าสู่ระบบ")
+    this.status = 'loading';
     await watchAuth((user) => { this._onUser(user).catch((err) => this._fail(err)); });
   }
 
@@ -185,6 +206,7 @@ export class SplitService extends EventTarget {
     if (!user?.email) {
       this.status = 'off';
       this.me = null;
+      rememberRole(null);
       this._finishLoading();
       this._emit();
       return;
@@ -200,7 +222,11 @@ export class SplitService extends EventTarget {
 
     let pair;
     try {
-      const snap = await getDoc(doc(fb.db, 'pairs', SPLIT_PAIR_ID));
+      // สำเนาในเครื่องก่อน (เร็ว ใช้ได้ตอนออฟไลน์) ไม่มีค่อยถามเซิร์ฟเวอร์
+      // ถ้าถูกเอาออกจากคู่ภายหลัง ตัวฟังรายการด้านล่างจะถูกปฏิเสธและแจ้งเอง
+      const ref = doc(fb.db, 'pairs', SPLIT_PAIR_ID);
+      const cached = await fb.storeMod.getDocFromCache(ref).catch(() => null);
+      const snap = cached?.exists() ? cached : await getDoc(ref);
       pair = snap.exists() ? snap.data() : null;
     } catch (err) {
       // ไม่ได้อยู่ในคู่ = กฎปฏิเสธการอ่าน — เป็นเรื่องปกติของบัญชีที่ไม่ได้ใช้หารกัน
@@ -211,6 +237,7 @@ export class SplitService extends EventTarget {
     const members = Array.isArray(pair?.members) ? pair.members.filter(isEmail).map((m) => m.toLowerCase()) : [];
     if (members.length !== 2 || !members.includes(this.me)) {
       this.status = 'none';
+      rememberRole(null);
       this._finishLoading();
       this._emit();
       return;
@@ -225,6 +252,7 @@ export class SplitService extends EventTarget {
       this.entries = snap.docs.map((d) => sanitizeSplit(d.data(), this.members)).filter(Boolean);
       this.pending = snap.metadata.hasPendingWrites;
       this.status = 'ready';
+      rememberRole(this.role);
       this._finishLoading();
       this._emit();
     }, (err) => this._fail(err));
