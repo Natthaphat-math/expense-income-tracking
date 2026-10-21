@@ -99,7 +99,7 @@ service cloud.firestore {
       let members = pairMembers(pairId);
       return d.keys().hasOnly(['id','kind','debtor','creditor','amount','total','name','date',
                                'settled','settledBy','settledAt','settledAs','createdBy','createdAt',
-                               'updatedAt','updatedBy','deleted'])
+                               'updatedAt','updatedBy','deleted','bucket'])
         && d.keys().hasAll(['id','kind','debtor','creditor','amount','name','date','settled',
                             'createdBy','createdAt','updatedAt','updatedBy','deleted'])
         && d.id is string && d.id.matches('^[A-Za-z0-9_-]{1,64}$')
@@ -115,6 +115,8 @@ service cloud.firestore {
         && (!('settledAt' in d) || d.settledAt == null || d.settledAt is int)
         // เคลียร์แบบไหน: โอนกันแล้ว หรือ ไม่ต้องคืน
         && (!('settledAs' in d) || d.settledAs == null || d.settledAs in ['paid','forgiven'])
+        // กลุ่ม: ทั่วไป หรือ ค่าบ้าน (แยกยอดและการโอนคืนกัน)
+        && (!('bucket' in d) || d.bucket == null || d.bucket in ['general','home'])
         && d.createdBy in members
         && d.createdAt is int && d.updatedAt is int
         // คนที่แก้ต้องเป็นคนที่เข้าสู่ระบบอยู่จริง ปลอมชื่ออีกฝ่ายไม่ได้
@@ -156,6 +158,28 @@ service cloud.firestore {
         && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 30
         && request.resource.data.updatedAt is int;
       allow delete: if isMember(pairId) && request.auth.token.email == setter;
+    }
+
+    // ทางลัดหารกัน: ใช้ร่วมกันสองคน แก้/ลบได้ทั้งคู่
+    match /pairs/{pairId}/shortcuts/{shortcutId} {
+      allow read: if isMember(pairId);
+      allow create, update: if isMember(pairId)
+        && request.resource.data.keys().hasOnly(['id','name','payer','mode','amount','bucket','order','updatedAt','updatedBy'])
+        && request.resource.data.keys().hasAll(['id','name','payer','mode','bucket','order','updatedAt','updatedBy'])
+        && request.resource.data.id == shortcutId
+        && shortcutId.matches('^[A-Za-z0-9_-]{1,64}$')
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 60
+        && request.resource.data.payer in pairMembers(pairId)
+        && request.resource.data.mode in ['full','half']
+        && (!('amount' in request.resource.data) || request.resource.data.amount == null
+            || (request.resource.data.amount is number && request.resource.data.amount > 0
+                && request.resource.data.amount < 100000000))
+        && request.resource.data.bucket in ['general','home']
+        && request.resource.data.order is int && request.resource.data.order >= 0 && request.resource.data.order < 1000
+        && request.resource.data.updatedAt is int
+        && request.resource.data.updatedBy == request.auth.token.email;
+      allow delete: if isMember(pairId);
     }
 
     // ทุกอย่างที่เหลือปิดหมด

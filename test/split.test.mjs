@@ -131,3 +131,31 @@ test('settledAs: paid by default, forgiven kept, absent on open items', () => {
   assert.equal(sanitizeSplit(legacy, MEMBERS).settledAs, 'paid');
   assert.equal(sanitizeSplit({ ...forgiven, settledAs: 'stolen' }, MEMBERS).settledAs, 'paid');
 });
+
+test('buckets: from the item name; general is the default and is not written', async () => {
+  const { bucketFor } = await import('../js/split-model.js');
+  assert.equal(bucketFor('ค่าไฟ'), 'home');
+  assert.equal(bucketFor('ค่าเน็ต ต.ค.'), 'home');
+  assert.equal(bucketFor('ข้าวเหนียว'), 'general');
+  assert.equal(bucketFor('รถไฟฟ้า'), 'general');            // "ไฟ" ในรถไฟฟ้าไม่ใช่ค่าไฟ
+  const general = toSplitDoc({ ...item(B, A, 50, '2026-10-01'), bucket: 'general' }, A, T0 + 1);
+  assert.equal('bucket' in general, false);
+  const home = toSplitDoc({ ...item(B, A, 50, '2026-10-01'), bucket: 'home' }, A, T0 + 1);
+  assert.equal(home.bucket, 'home');
+  assert.equal(sanitizeSplit(home, MEMBERS).bucket, 'home');
+  assert.equal(sanitizeSplit(general, MEMBERS).bucket, 'general');
+  assert.equal(sanitizeSplit({ ...home, bucket: 'casino' }, MEMBERS).bucket, 'general');
+});
+
+test('shortcuts: cleaned, payer must be in the pair; defaults', async () => {
+  const { sanitizeShortcut, defaultShortcuts } = await import('../js/split-model.js');
+  const ok = sanitizeShortcut({ id: 's1', name: ' ค่าเน็ต ', payer: A, mode: 'half', amount: null, bucket: 'home', order: 0 }, MEMBERS);
+  assert.deepEqual(ok, { id: 's1', name: 'ค่าเน็ต', payer: A, mode: 'half', amount: null, bucket: 'home', order: 0 });
+  assert.equal(sanitizeShortcut({ id: 's1', name: 'x', payer: 'z@evil.com', mode: 'full', bucket: 'general', order: 0 }, MEMBERS), null);
+  assert.equal(sanitizeShortcut({ id: '../x', name: 'x', payer: A }, MEMBERS), null);
+  assert.equal(sanitizeShortcut({ id: 's2', name: 'รถเมล์', payer: A, mode: 'weird', amount: -1, bucket: 'x', order: 5 }, MEMBERS).mode, 'full');
+  const d = defaultShortcuts(A, B);
+  assert.deepEqual(d.map((s) => [s.name, s.payer, s.mode, s.bucket]), [
+    ['ค่าเน็ต', B, 'half', 'home'], ['ค่าไฟ', B, 'full', 'home'], ['รถเมล์', A, 'full', 'general'],
+  ]);
+});

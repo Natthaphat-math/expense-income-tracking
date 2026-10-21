@@ -8,6 +8,7 @@ import { loadFirebase, watchAuth } from './remote.js';
 import { SPLIT_PAIR_ID, SYNC_ENABLED } from './firebase-config.js';
 import {
   sanitizeSplit, toSplitDoc, summarizeSplits, unseenCount, isEmail, cleanNickname,
+  sanitizeShortcut, defaultShortcuts,
 } from './split-model.js';
 import { newId } from './model.js';
 import { friendlyError } from './sync.js';
@@ -34,6 +35,8 @@ export class SplitService extends EventTarget {
     this.entries = [];
     /** อีเมลคนตั้ง → ชื่อที่คนนั้นใช้เรียกอีกฝ่าย */
     this.nicknames = {};
+    /** ทางลัดที่ใช้ร่วมกัน — null = ยังไม่เคยตั้ง (ใช้ชุดเริ่มต้น) */
+    this._shortcuts = null;
     this.pending = false;
     this._unsub = null;
     this._settled = Promise.resolve();
@@ -78,8 +81,38 @@ export class SplitService extends EventTarget {
     return email ? email.split('@')[0] : '';
   }
 
-  summary() {
-    return summarizeSplits(this.entries, this.me);
+  /** สรุปยอด — ส่ง bucket มาเพื่อดูเฉพาะกลุ่มนั้น (ไม่ส่ง = ทุกกลุ่มรวมกัน) */
+  summary(bucket = null) {
+    const list = bucket ? this.entries.filter((e) => e.bucket === bucket) : this.entries;
+    return summarizeSplits(list, this.me);
+  }
+
+  /** ทางลัดเรียงตามลำดับ — ยังไม่เคยตั้งเลยใช้ชุดเริ่มต้น */
+  get shortcuts() {
+    if (this._shortcuts && this._shortcuts.length > 0) return this._shortcuts;
+    const owner = this.owner && this.members.includes(this.owner) ? this.owner : this.members[0];
+    const other = this.members.find((m) => m !== owner);
+    return owner && other ? defaultShortcuts(owner, other) : [];
+  }
+
+  /** บันทึกทางลัดทั้งชุด (เพิ่ม/แก้/เรียงใหม่) — ชุดเริ่มต้นจะถูกเขียนลงไปจริงครั้งแรกที่แก้ */
+  async saveShortcuts(list, removedIds = []) {
+    const fb = await loadFirebase();
+    if (!fb || this.status !== 'ready') throw new Error('ยังเชื่อมต่อหารกันไม่ได้');
+    const { doc, writeBatch } = fb.storeMod;
+    const batch = writeBatch(fb.db);
+    const now = Date.now();
+    list.forEach((sc, order) => {
+      batch.set(doc(fb.db, 'pairs', SPLIT_PAIR_ID, 'shortcuts', sc.id), {
+        id: sc.id, name: sc.name, payer: sc.payer, mode: sc.mode,
+        amount: sc.amount ?? null, bucket: sc.bucket, order, updatedAt: now, updatedBy: this.me,
+      });
+    });
+    for (const id of removedIds) batch.delete(doc(fb.db, 'pairs', SPLIT_PAIR_ID, 'shortcuts', id));
+    batch.commit().catch((err) => {
+      this.lastError = friendlyError(err);
+      this.dispatchEvent(new CustomEvent('write-error', { detail: this.lastError }));
+    });
   }
 
   /** ชื่อเล่นที่ฉันตั้งให้อีกฝ่าย / ที่อีกฝ่ายตั้งให้ฉัน */
@@ -145,6 +178,7 @@ export class SplitService extends EventTarget {
     this._unsub = null;
     this.entries = [];
     this.nicknames = {};
+    this._shortcuts = null;
     this.lastError = null;
     if (!this._resolveSettled) this._beginLoading();
 
@@ -205,7 +239,12 @@ export class SplitService extends EventTarget {
       this.nicknames = next;
       if (this.status === 'ready') this._emit();
     }, (err) => console.warn('หารกัน: อ่านชื่อเล่นไม่ได้', err));
-    this._unsub = () => { stopSplits(); stopNicknames(); };
+    const stopShortcuts = onSnapshot(collection(fb.db, 'pairs', SPLIT_PAIR_ID, 'shortcuts'), (snap) => {
+      this._shortcuts = snap.docs.map((d) => sanitizeShortcut(d.data(), this.members)).filter(Boolean)
+        .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+      if (this.status === 'ready') this._emit();
+    }, (err) => console.warn('หารกัน: อ่านทางลัดไม่ได้ (ใช้ชุดเริ่มต้น)', err));
+    this._unsub = () => { stopSplits(); stopNicknames(); stopShortcuts(); };
   }
 
   // ------------------------------------------------------------ เขียน

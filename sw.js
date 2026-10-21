@@ -1,7 +1,7 @@
 // service worker แบบเรียบง่าย — แคชไฟล์ของแอปไว้ให้เปิดได้ตอนออฟไลน์
 // ข้อมูลของผู้ใช้อยู่ใน localStorage ไม่ได้ผ่านที่นี่
 
-const CACHE = 'tet-v14';
+const CACHE = 'tet-v15';
 
 // ไฟล์ของตัวอ่านสลิป (ราว 5 MB) — แคชแยก ไม่ลบตอนอัปเดตแอป
 // ชื่อโฟลเดอร์มีเลขเวอร์ชัน ไฟล์จึงไม่เปลี่ยนที่เดิม ใช้แคชได้เลยไม่ต้องเช็กของใหม่
@@ -49,6 +49,7 @@ const ASSETS = [
   './js/split-model.js',
   './js/split-service.js',
   './js/split-parse.js',
+  './js/screens/split-shortcuts.js',
   './js/screens/split.js',
   './js/screens/sync-ui.js',
   './js/firebase-config.js',

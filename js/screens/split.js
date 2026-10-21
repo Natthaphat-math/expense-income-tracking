@@ -3,11 +3,14 @@
 import { el, replace } from '../dom.js';
 import { formatMoney, formatNumber, relativeDate, entryDayISO, todayISO, monthNameShort } from '../format.js';
 import { normalizeAmount } from '../model.js';
-import { parseSplitText, SELF_WORDS } from '../split-parse.js';
+import { parseSplitText, parseSplitLine, SELF_WORDS } from '../split-parse.js';
+import { BUCKETS, bucketFor, bucketLabel, summarizeSplits } from '../split-model.js';
+import { openShortcutEditor } from './split-shortcuts.js';
 import { openSheet, openDatePicker, confirmDialog, toast, pageHeader } from '../ui.js';
 import { icon, categoryTile } from '../icons.js';
 
 const HISTORY_LIMIT = 60;
+const MIGRATE_KEY = 'tet:split-home-offer';
 
 export function renderSplit(app) {
   const split = app.split;
@@ -61,26 +64,37 @@ export function renderSplit(app) {
   }
 
   function ready(them) {
-    const { net, open, history } = split.summary();
+    const all = split.summary();
     // "ใหม่" = อีกฝ่ายเพิ่ม/แก้หลังจากที่ฉันเปิดดูครั้งก่อน — จำเวลานั้นไว้ตลอดการเปิดหน้านี้ครั้งนี้
     // (หน้าถูกวาดใหม่ทุกครั้งที่ข้อมูลเปลี่ยน แต่ options ของหน้ายังเป็นตัวเดิม)
     const visit = app.current.options ?? {};
     visit.seenAt ??= split.seenAt();
     state.seenAt = visit.seenAt;
     split.markSeen();
+    // แต่ละกลุ่มคิดยอดแยกกัน ไม่หักลบข้ามกลุ่ม — มีแต่กลุ่มทั่วไปก็หน้าตาเหมือนเดิม
+    const groups = shownBuckets().map((b) => ({ ...b, ...split.summary(b.id) }));
+    const multi = groups.length > 1;
+    const open = groups.flatMap((g) => g.open);
+    const history = groups.flatMap((g) => g.history).sort((a, b) => b.date.localeCompare(a.date) || b.updatedAt - a.updatedAt);
+    const net = all.net;
     const selectable = open.filter((e) => e.kind === 'item');
     // ตัดรายการที่ไม่อยู่แล้ว (ถูกเคลียร์/ลบจากอีกเครื่อง) ออกจากการเลือก
     for (const id of [...state.selected]) if (!selectable.some((e) => e.id === id)) state.selected.delete(id);
     const picked = selectable.filter((e) => state.selected.has(e.id));
     document.body.classList.toggle('has-split-select', picked.length > 0);
     return [
-      balanceCard(net, open, them),
+      groups.map((g) => balanceCard(g, them, multi)),
+      multi && groups.filter((g) => g.net !== 0).length > 1
+        ? el('p', { class: 'split-overall' }, `รวมทุกกลุ่ม: ${owesText(net, them)}`)
+        : null,
+      migrateOffer(them),
       el('div', { class: 'split-add-row' },
         el('button', { class: 'btn btn-primary split-add', type: 'button', onclick: () => editItem(null) },
           icon('plus', { size: 20 }), ' เพิ่มรายการ'),
         el('button', { class: 'btn split-add', type: 'button', onclick: () => batchEntry() },
           icon('list', { size: 20 }), ' หลายบรรทัด'),
       ),
+      shortcutChips(),
       selectable.length > 0
         ? el('div', { class: 'split-select-all' },
             el('button', {
@@ -98,7 +112,7 @@ export function renderSplit(app) {
             el('div', { class: 'section-head' }, el('h2', { class: 'section-title' }, 'ยังไม่เคลียร์')),
             el('p', { class: 'split-empty' }, 'ไม่มีรายการค้าง'),
           )
-        : directionSections(open, them),
+        : groups.map((g) => directionSections(g.open, them, multi ? g.label : null)),
       history.length > 0
         ? el('section', { class: 'split-section' },
             el('button', {
@@ -114,7 +128,7 @@ export function renderSplit(app) {
               icon('chevronDown', { cls: `collapse-mark ${state.showHistory ? 'collapse-mark-open' : ''}` }),
             ),
             state.showHistory
-              ? el('ul', { class: 'tx-list' }, history.slice(0, HISTORY_LIMIT).map((e) => row(e, true)))
+              ? el('ul', { class: 'tx-list' }, history.slice(0, HISTORY_LIMIT).map((e) => row(e, true, multi)))
               : null,
           )
         : null,
@@ -123,15 +137,96 @@ export function renderSplit(app) {
     ];
   }
 
+  /** กลุ่มที่แสดง: ทั่วไปเสมอ กลุ่มอื่นเมื่อมีรายการอยู่ในกลุ่มนั้น */
+  function shownBuckets() {
+    return BUCKETS.filter((b) => b.id === 'general' || split.entries.some((e) => !e.deleted && e.bucket === b.id));
+  }
+
+  /** ทางลัด — กดแล้วได้ฟอร์มที่กรอกไว้ เหลือแค่ใส่ยอด */
+  function shortcutChips() {
+    const list = split.shortcuts;
+    return el('div', { class: 'split-chips', role: 'group', 'aria-label': 'ทางลัด' },
+      list.map((sc) => el('button', {
+        class: 'split-chip', type: 'button',
+        'aria-label': `ทางลัด ${sc.name}: ${shortcutText(sc)}`,
+        onclick: () => editItem(null, sc),
+      },
+        el('span', { class: 'split-chip-name' }, sc.name),
+        el('span', { class: 'split-chip-sub' }, shortcutText(sc)),
+      )),
+      el('button', {
+        class: 'split-chip split-chip-add', type: 'button', 'aria-label': 'เพิ่มทางลัด',
+        onclick: () => openShortcutEditor(app, null),
+      }, icon('plus', { size: 18 })),
+    );
+  }
+
+  function shortcutText(sc) {
+    const parts = [`${split.nameOf(sc.payer)}จ่าย`, sc.mode === 'half' ? 'หารครึ่ง' : 'ออกให้ทั้งหมด'];
+    if (sc.amount) parts.push(formatNumber(sc.amount));
+    return parts.join(' · ');
+  }
+
+  /**
+   * ครั้งแรกที่มีกลุ่มค่าบ้าน: รายการค่าเน็ต/ค่าไฟที่ยังค้างอยู่ในกลุ่มทั่วไป เสนอย้ายให้ (ครั้งเดียว ต่อเครื่อง)
+   */
+  function migrateOffer(them) {
+    let dismissed = false;
+    try { dismissed = localStorage.getItem(MIGRATE_KEY) === 'done'; } catch { /* ถามได้ */ }
+    if (dismissed) return null;
+    const movable = split.entries.filter((e) => !e.deleted && !e.settled && e.kind === 'item'
+      && e.bucket === 'general' && bucketFor(e.name) === 'home');
+    if (movable.length === 0) return null;
+    const finish = () => {
+      try { localStorage.setItem(MIGRATE_KEY, 'done'); } catch { /* ไม่เป็นไร */ }
+      rerender();
+    };
+    return el('div', { class: 'sort-prompt split-migrate', role: 'note' },
+      el('span', { class: 'sort-prompt-text' },
+        el('strong', {}, `แยก${movable.map((e) => e.name).filter((n, i, a) => a.indexOf(n) === i).slice(0, 3).join(', ')} ไปกลุ่มค่าบ้าน?`),
+        el('span', {}, `${formatNumber(movable.length)} รายการที่ยังค้าง — ค่าบ้านคิดยอดและโอนคืนแยกจากรายการอื่น`),
+      ),
+      el('div', { class: 'split-migrate-actions' },
+        el('button', { class: 'btn btn-small btn-ghost', type: 'button', onclick: finish }, 'ไม่ต้อง'),
+        el('button', {
+          class: 'btn btn-small btn-primary', type: 'button',
+          onclick: async () => {
+            const moved = movable.map((e) => ({ ...split.byId(e.id), bucket: 'home' }));
+            const after = (id) => summarizeAfter(moved, id);
+            const ok = await confirmDialog({
+              title: `ย้าย ${formatNumber(moved.length)} รายการไปค่าบ้าน?`,
+              message: `หลังย้าย\nค่าบ้าน: ${owesText(after('home'), them)}\nทั่วไป: ${owesText(after('general'), them)}`,
+              confirmText: 'ย้าย',
+              cancelText: 'ยังก่อน',
+            });
+            if (!ok) return;
+            const undo = movable.map((e) => ({ id: e.id, before: split.byId(e.id) }));
+            split.save(moved);
+            app.notifyUndoable(`ย้ายไปค่าบ้าน ${formatNumber(moved.length)} รายการแล้ว`, undo, (u) => split.revert(u));
+            finish();
+          },
+        }, 'ย้าย'),
+      ),
+    );
+  }
+
+  /** ยอดสุทธิของกลุ่ม ถ้าแก้รายการตาม changed แล้ว */
+  function summarizeAfter(changed, bucket) {
+    const byId = new Map(changed.map((e) => [e.id, e]));
+    const list = split.entries.map((e) => byId.get(e.id) ?? e).filter((e) => e.bucket === bucket);
+    return summarizeSplits(list, split.me).net;
+  }
+
   /**
    * แยกรายการค้างตามทิศ พร้อมยอดรวมแต่ละฝั่ง — อ่านทิศจากหัวข้อ ไม่ต้องพึ่งสีไอคอน
    * การโอนที่ยังเหลือ (โอนเกิน) แยกไว้อีกกลุ่ม
    */
-  function directionSections(open, them) {
+  function directionSections(open, them, label = null) {
+    const prefix = label ? `${label} · ` : '';
     const groups = [
-      { title: `${them} ค้างฉัน`, rows: open.filter((e) => e.kind === 'item' && e.creditor === split.me) },
-      { title: `ฉันค้าง ${them}`, rows: open.filter((e) => e.kind === 'item' && e.debtor === split.me) },
-      { title: 'โอนแล้ว ยังไม่ได้หัก', rows: open.filter((e) => e.kind === 'payment'), payments: true },
+      { title: `${prefix}${them} ค้างฉัน`, rows: open.filter((e) => e.kind === 'item' && e.creditor === split.me) },
+      { title: `${prefix}ฉันค้าง ${them}`, rows: open.filter((e) => e.kind === 'item' && e.debtor === split.me) },
+      { title: `${prefix}โอนแล้ว ยังไม่ได้หัก`, rows: open.filter((e) => e.kind === 'payment'), payments: true },
     ];
     return groups.filter((g) => g.rows.length > 0).map((g) => {
       const total = g.rows.reduce((sum, e) => sum + e.remaining, 0);
@@ -247,7 +342,7 @@ export function renderSplit(app) {
         // โอนส่วนที่เหลือแล้ว — บันทึกเป็นการโอน รายการจึงถูกหักครบเอง
         const payment = split.draft({
           kind: 'payment', debtor: e.debtor, creditor: e.creditor, amount: e.remaining,
-          name: `เคลียร์ ${e.name}`.slice(0, 200), date: entryDayISO(),
+          name: `เคลียร์ ${e.name}`.slice(0, 200), date: entryDayISO(), bucket: e.bucket,
         });
         writes.push(payment);
         undo.push({ id: payment.id, before: null });
@@ -258,7 +353,7 @@ export function renderSplit(app) {
         const gift = split.draft({
           kind: 'item', debtor: e.debtor, creditor: e.creditor, amount: e.remaining, total: null,
           name: `${e.name} (ส่วนที่ไม่ต้องคืน)`.slice(0, 200), date: e.date,
-          settled: true, settledAs: 'forgiven',
+          settled: true, settledAs: 'forgiven', bucket: e.bucket,
         });
         writes.push(gift);
         undo.push({ id: gift.id, before: null });
@@ -298,11 +393,16 @@ export function renderSplit(app) {
     });
   }
 
-  /** ยอดสุทธิ — บวก = อีกฝ่ายค้างฉัน */
-  function balanceCard(net, open, them) {
+  /** ยอดสุทธิของกลุ่ม — บวก = อีกฝ่ายค้างฉัน */
+  function balanceCard(group, them, multi) {
+    const { net, open, id: bucket } = group;
     const owedToMe = net > 0;
     const headline = net === 0 ? 'ไม่มียอดค้าง' : owedToMe ? `${them} ค้างฉัน` : `ฉันค้าง ${them}`;
-    return el('section', { class: `hero-card split-balance ${net === 0 ? 'is-clear' : owedToMe ? 'is-owed' : 'is-owing'}` },
+    return el('section', {
+      class: `hero-card split-balance ${multi ? 'split-balance-group' : ''} ${net === 0 ? 'is-clear' : owedToMe ? 'is-owed' : 'is-owing'}`,
+      'aria-label': multi ? `กลุ่ม${group.label}` : null,
+    },
+      multi ? el('p', { class: 'split-group-name' }, group.label) : null,
       el('p', { class: 'hero-label' }, headline),
       el('p', { class: 'hero-amount' },
         formatNumber(Math.abs(net)), el('span', { class: 'hero-unit' }, ' บาท')),
@@ -310,11 +410,11 @@ export function renderSplit(app) {
       net !== 0 || open.length > 0
         ? el('div', { class: 'split-balance-actions' },
             net !== 0
-              ? el('button', { class: 'btn btn-small btn-primary', type: 'button', onclick: () => recordPayment(net) },
+              ? el('button', { class: 'btn btn-small btn-primary', type: 'button', onclick: () => recordPayment(net, null, bucket) },
                   'บันทึกการโอนคืน')
               : null,
             open.length > 0
-              ? el('button', { class: 'btn btn-small', type: 'button', onclick: () => settleAll(open, net, them) },
+              ? el('button', { class: 'btn btn-small', type: 'button', onclick: () => settleAll(open, net, them, bucket, multi ? group.label : null) },
                   'เคลียร์ทั้งหมด')
               : null,
           )
@@ -336,7 +436,7 @@ export function renderSplit(app) {
     return el('p', { class: 'split-breakdown' }, `${parts.join(' · ')} → หักลบกันแล้ว`);
   }
 
-  function row(e, inHistory) {
+  function row(e, inHistory, multi = false) {
     const payer = split.nameOf(e.creditor);
     const debtor = split.nameOf(e.debtor);
     const isPayment = e.kind === 'payment';
@@ -359,6 +459,7 @@ export function renderSplit(app) {
       if (e.partly) parts.push(`โอนคืนแล้ว ${formatNumber(e.amount - e.remaining)} จาก ${formatNumber(e.amount)}`);
       sub = parts.join(' · ');
     }
+    if (inHistory && multi && e.bucket !== 'general') sub = `${bucketLabel(e.bucket)} · ${sub}`;
     // อีกฝ่ายแก้รายการที่ฉันสร้าง — บอกให้รู้
     if (!inHistory && e.updatedBy !== split.me && e.createdBy === split.me && e.updatedAt > e.createdAt + 1000) {
       sub = `${sub} · แก้โดย ${split.nameOf(e.updatedBy)}`;
@@ -416,11 +517,11 @@ export function renderSplit(app) {
       undo, (u) => split.revert(u));
   }
 
-  async function settleAll(open, net, them) {
-    // ทุกอย่างที่ยังไม่เคลียร์ — รวมการโอนที่หักรายการไปแล้ว (อยู่ในประวัติ) ด้วย
+  async function settleAll(open, net, them, bucket, label) {
+    // ทุกอย่างที่ยังไม่เคลียร์ในกลุ่มนี้ — รวมการโอนที่หักรายการไปแล้ว (อยู่ในประวัติ) ด้วย
     // ไม่งั้นการโอนนั้นจะเหลือค้างเป็นยอดติดลบหลังเคลียร์รายการทั้งหมด
-    const unsettled = split.entries.filter((e) => !e.settled && !e.deleted);
-    const how = await askHow(`เคลียร์ทั้งหมด ${formatNumber(open.filter((e) => e.kind === 'item').length || open.length)} รายการ?`,
+    const unsettled = split.entries.filter((e) => !e.settled && !e.deleted && e.bucket === bucket);
+    const how = await askHow(`เคลียร์${label ? label : ''}ทั้งหมด ${formatNumber(open.filter((e) => e.kind === 'item').length || open.length)} รายการ?`,
       net === 0
         ? 'ทุกรายการจะย้ายไปอยู่ในเคลียร์แล้ว'
         : `${net > 0 ? `${them} ค้างฉัน` : `ฉันค้าง ${them}`} ${formatMoney(Math.abs(net))}\nเคลียร์แล้วยอดค้างจะเป็น 0`);
@@ -442,6 +543,7 @@ export function renderSplit(app) {
         const gift = split.draft({
           kind: 'item', debtor: raw.debtor, creditor: raw.creditor, amount: view.remaining, total: null,
           name: `${raw.name} (ส่วนที่ไม่ต้องคืน)`.slice(0, 200), date: raw.date, settled: true, settledAs: 'forgiven',
+          bucket: raw.bucket,
         });
         writes.push(gift);
         undo.push({ id: gift.id, before: null });
@@ -457,8 +559,11 @@ export function renderSplit(app) {
     app.notifyUndoable('ไม่ต้องคืนทั้งหมดแล้ว', undo, (u) => split.revert(u));
   }
 
-  /** เพิ่ม/แก้รายการที่จ่ายแทนกัน */
-  function editItem(existing) {
+  /**
+   * เพิ่ม/แก้รายการที่จ่ายแทนกัน
+   * preset = ทางลัด (ชื่อ คนจ่าย แบ่งยังไง ยอด กลุ่ม กรอกไว้ให้)
+   */
+  function editItem(existing, preset = null) {
     const me = split.me;
     const partner = split.partner;
     const f = existing
@@ -471,13 +576,22 @@ export function renderSplit(app) {
             : Math.abs(existing.total / 2 - existing.amount) < 0.01 ? 'half' : 'custom',
           owed: existing.amount,
           date: existing.date,
+          bucket: existing.bucket,
         }
-      : { payer: me, name: '', total: null, mode: 'full', owed: null, date: entryDayISO() };
+      : preset
+        ? { payer: preset.payer, name: preset.name, total: preset.amount, mode: preset.mode, owed: null, date: entryDayISO(), bucket: preset.bucket }
+        : { payer: me, name: '', total: null, mode: 'full', owed: null, date: entryDayISO(), bucket: 'general' };
+    // กลุ่มเดาจากชื่อให้ จนกว่าจะเลือกเอง
+    let bucketTouched = Boolean(existing || preset);
 
     const body = el('div', { class: 'form split-form' });
     const nameInput = el('input', {
       class: 'input', type: 'text', value: f.name, placeholder: 'เช่น ข้าวกะเพรา, ค่าแท็กซี่', 'aria-label': 'จ่ายค่าอะไร',
-      maxlength: '200', oninput: (ev) => { f.name = ev.target.value; },
+      maxlength: '200',
+      oninput: (ev) => {
+        f.name = ev.target.value;
+        if (!bucketTouched && f.bucket !== bucketFor(f.name)) { f.bucket = bucketFor(f.name); paint(); }
+      },
     });
     const totalInput = el('input', {
       class: 'input input-amount', type: 'text', inputmode: 'decimal', placeholder: '0', 'aria-label': 'จ่ายไป (บาท)',
@@ -490,6 +604,49 @@ export function renderSplit(app) {
       oninput: (ev) => { f.owed = normalizeAmount(ev.target.value.replace(/,/g, '')); paint(); },
     });
     const dynamic = el('div', { class: 'split-form-dynamic' });
+
+    // พิมพ์เร็ว: "120 ข้าวมันไก่ หาร" หรือ "เอฟ 40 รถเมล์ เมื่อวาน" แล้วช่องด้านล่างกรอกให้เอง
+    const quickNote = el('p', { class: 'field-hint split-quick-note', role: 'status' });
+    let quickTimer = null;
+    let askedMode = false;
+    const quickInput = el('input', {
+      class: 'input', type: 'text', placeholder: 'เช่น 120 ข้าวมันไก่ หาร', 'aria-label': 'พิมพ์เร็ว',
+      autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', maxlength: '240',
+      oninput: () => { clearTimeout(quickTimer); quickTimer = setTimeout(applyQuick, 250); },
+    });
+
+    function applyQuick() {
+      const text = quickInput.value;
+      if (!text.trim()) { quickNote.textContent = ''; return; }
+      const row = parseSplitLine(text, {
+        people: peopleList(), mode: nameMode() ?? 'debtor', date: f.date, today: todayISO(), requirePerson: false,
+      });
+      if (row.ok && row.person && !nameMode() && !askedMode) {
+        // ใส่ชื่อมาด้วย แต่ยังไม่รู้ว่าชื่อหมายถึงคนค้างหรือคนจ่าย — ถามครั้งเดียว แล้วอ่านใหม่
+        askedMode = true;
+        askNameMode(() => applyQuick());
+        return;
+      }
+      if (!row.ok) {
+        quickNote.textContent = { amount: 'ใส่ยอดด้วย เช่น 120', what: 'บอกด้วยว่าจ่ายค่าอะไร' }[row.error] ?? '';
+        return;
+      }
+      if (row.kind === 'payment') {
+        quickNote.textContent = 'การโอนคืน ใช้ปุ่ม “บันทึกการโอนคืน” ที่การ์ดยอดค้าง';
+        return;
+      }
+      f.name = row.name;
+      f.total = row.total ?? row.amount;
+      if (row.half) f.mode = 'half';
+      else if (f.mode === 'half' || f.mode === 'custom') f.mode = 'full';
+      if (row.person) f.payer = row.creditor;
+      f.date = row.date;
+      if (!bucketTouched) f.bucket = bucketFor(f.name);
+      nameInput.value = f.name;
+      totalInput.value = String(f.total);
+      quickNote.textContent = 'กรอกให้แล้ว — ตรวจด้านล่างแล้วกดบันทึก';
+      paint();
+    }
 
     const owedAmount = () => {
       if (f.total === null) return null;
@@ -509,6 +666,7 @@ export function renderSplit(app) {
           ? el('label', { class: 'field' }, el('span', { class: 'field-label' }, 'ส่วนที่ต้องคืน'),
               el('div', { class: 'input-with-suffix' }, owedInput, el('span', { class: 'input-suffix' }, 'บาท')))
           : null,
+        seg('กลุ่ม', BUCKETS.map((b) => [b.id, b.label]), f.bucket, (v) => { f.bucket = v; bucketTouched = true; paint(); }),
         el('button', {
           class: 'picker-field', type: 'button',
           onclick: () => openDatePicker({ value: f.date, onSelect: (iso) => { f.date = iso; paint(); } }),
@@ -519,12 +677,15 @@ export function renderSplit(app) {
         ),
         el('p', { class: 'split-preview', role: 'status' },
           owed && owed > 0
-            ? `${debtor === me ? `ฉันค้าง ${split.nameOf(f.payer)}` : `${split.nameOf(debtor)} ค้างฉัน`} ${formatMoney(owed)}`
+            ? `${debtor === me ? `ฉันค้าง ${split.nameOf(f.payer)}` : `${split.nameOf(debtor)} ค้างฉัน`} ${formatMoney(owed)}${f.bucket !== 'general' ? ` · ${bucketLabel(f.bucket)}` : ''}`
             : 'ใส่ยอดที่จ่ายไป'),
       );
     }
 
     replace(body,
+      existing || preset
+        ? null
+        : el('label', { class: 'field split-quick' }, el('span', { class: 'field-label' }, 'พิมพ์เร็ว'), quickInput, quickNote),
       el('label', { class: 'field' }, el('span', { class: 'field-label' }, 'จ่ายค่าอะไร'), nameInput),
       el('label', { class: 'field' }, el('span', { class: 'field-label' }, 'จ่ายไป'),
         el('div', { class: 'input-with-suffix' }, totalInput, el('span', { class: 'input-suffix' }, 'บาท'))),
@@ -533,7 +694,7 @@ export function renderSplit(app) {
     paint();
 
     const handle = openSheet({
-      title: existing ? 'แก้รายการ' : 'เพิ่มรายการหารกัน',
+      title: existing ? 'แก้รายการ' : preset ? preset.name : 'เพิ่มรายการหารกัน',
       body,
       fullHeight: true,
       actions: [
@@ -558,6 +719,7 @@ export function renderSplit(app) {
               total: f.mode === 'full' ? null : f.total,
               name: f.name.trim(),
               date: f.date,
+              bucket: f.bucket,
             };
             const before = existing ? split.byId(existing.id) : null;
             handle.close();
@@ -568,16 +730,19 @@ export function renderSplit(app) {
         }, 'บันทึก'),
       ],
     });
-    if (!existing) setTimeout(() => nameInput.focus(), 150);
+    if (preset) setTimeout(() => (preset.amount ? null : totalInput.focus()), 150);
+    else if (!existing) setTimeout(() => quickInput.focus(), 150);
   }
 
   /** บันทึกการโอนคืน (บางส่วนได้) — net > 0 แปลว่าอีกฝ่ายต้องโอนให้ฉัน */
-  function recordPayment(net, existing = null) {
+  function recordPayment(net, existing = null, bucket = 'general') {
     const me = split.me;
     const partner = split.partner;
     const f = existing
-      ? { from: existing.debtor, amount: existing.amount, note: existing.name, date: existing.date }
-      : { from: net > 0 ? partner : me, amount: Math.abs(net) || null, note: '', date: entryDayISO() };
+      ? { from: existing.debtor, amount: existing.amount, note: existing.name, date: existing.date, bucket: existing.bucket }
+      : { from: net > 0 ? partner : me, amount: Math.abs(net) || null, note: '', date: entryDayISO(), bucket };
+    // มีกลุ่มเดียว ไม่ต้องถาม
+    const multi = shownBuckets().length > 1 || f.bucket !== 'general';
 
     const body = el('div', { class: 'form split-form' });
     const amountInput = el('input', {
@@ -593,6 +758,7 @@ export function renderSplit(app) {
     function paint() {
       replace(dynamic,
         seg('ใครโอน', [[me, 'ฉันโอน'], [partner, `${split.nameOf(partner)}โอน`]], f.from, (v) => { f.from = v; paint(); }),
+        multi ? seg('คืนกลุ่มไหน', BUCKETS.map((b) => [b.id, b.label]), f.bucket, (v) => { f.bucket = v; paint(); }) : null,
         el('button', {
           class: 'picker-field', type: 'button',
           onclick: () => openDatePicker({ value: f.date, onSelect: (iso) => { f.date = iso; paint(); } }),
@@ -615,7 +781,7 @@ export function renderSplit(app) {
     paint();
 
     const handle = openSheet({
-      title: existing ? 'แก้การโอนคืน' : 'บันทึกการโอนคืน',
+      title: existing ? 'แก้การโอนคืน' : multi ? `บันทึกการโอนคืน · ${bucketLabel(f.bucket)}` : 'บันทึกการโอนคืน',
       body,
       actions: [
         existing
@@ -633,6 +799,7 @@ export function renderSplit(app) {
               total: null,
               name: f.note.trim(),
               date: f.date,
+              bucket: f.bucket,
             };
             const before = existing ? split.byId(existing.id) : null;
             handle.close();
@@ -712,6 +879,16 @@ export function renderSplit(app) {
     });
   }
 
+  /** คำที่ใช้เรียกแต่ละคนตอนพิมพ์ */
+  function peopleList() {
+    const me = split.me;
+    const partner = split.partner;
+    return [
+      { email: partner, words: [split.pairName(partner), split.myNickname].filter(Boolean) },
+      { email: me, words: [split.pairName(me), split.nicknameForMe, ...SELF_WORDS].filter(Boolean) },
+    ];
+  }
+
   function batchEntry() {
     const mode = nameMode();
     if (!mode) {
@@ -721,10 +898,7 @@ export function renderSplit(app) {
     const me = split.me;
     const partner = split.partner;
     const them = split.nameOf(partner);
-    const people = [
-      { email: partner, words: [split.pairName(partner), split.myNickname].filter(Boolean) },
-      { email: me, words: [split.pairName(me), split.nicknameForMe, ...SELF_WORDS].filter(Boolean) },
-    ];
+    const people = peopleList();
     const state = { date: entryDayISO(), flipped: new Set(), rows: [] };
 
     const area = el('textarea', {
@@ -796,6 +970,7 @@ export function renderSplit(app) {
         row.kind === 'item' ? row.name : null,
         row.half ? `หารครึ่งจาก ${formatNumber(row.total)}` : null,
         row.date !== state.date ? relativeDate(row.date) : null,
+        row.kind === 'item' && bucketFor(row.name) !== 'general' ? bucketLabel(bucketFor(row.name)) : null,
       ].filter(Boolean).join(' · ');
       return el('div', { class: 'split-batch-card' },
         el('div', { class: 'split-batch-text' },
@@ -831,6 +1006,7 @@ export function renderSplit(app) {
       const entries = good.map((r) => split.draft({
         kind: r.kind, debtor: r.debtor, creditor: r.creditor, amount: r.amount,
         total: r.total, name: r.name, date: r.date,
+        bucket: r.kind === 'item' ? bucketFor(r.name) : 'general',
       }));
       handle.close();
       split.save(entries);

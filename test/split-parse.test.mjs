@@ -86,3 +86,16 @@ test('several lines, blank lines skipped, Thai digits and commas', () => {
   assert.equal(rows[1].amount, 30);
   assert.equal(rows[2].amount, 1200);
 });
+
+test('quick input in the add form: the name is optional', () => {
+  const r = p('ค่าไฟ 1742.62', { requirePerson: false });
+  assert.equal(r.ok, true);
+  assert.equal(r.person, null);
+  assert.equal(r.name, 'ค่าไฟ');
+  assert.equal(r.amount, 1742.62);
+  const h = p('ค่าเน็ต 642 หาร', { requirePerson: false });
+  assert.equal(h.amount, 321);
+  assert.equal(h.total, 642);
+  assert.equal(p('ปุณ 20 ข้าวเหนียว', { requirePerson: false }).debtor, A);
+  assert.equal(p('ข้าวเหนียว', { requirePerson: false }).error, 'amount');
+});

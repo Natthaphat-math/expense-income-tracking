@@ -31,7 +31,7 @@ const round = (n) => Math.round(n * 100) / 100;
  * @param {string} o.today วันนี้ตามปฏิทิน (สำหรับ "เมื่อวาน")
  * @returns {{raw, ok, error?, kind?, person?, debtor?, creditor?, amount?, total?, name?, date?, half?}}
  */
-export function parseSplitLine(line, { people, mode, date, today }) {
+export function parseSplitLine(line, { people, mode, date, today, requirePerson = true }) {
   const raw = String(line ?? '');
   let text = normalizeLine(raw).replace(POLITE_ENDING, '').trim();
   const out = { raw, ok: false };
@@ -57,7 +57,7 @@ export function parseSplitLine(line, { people, mode, date, today }) {
       }
     }
   }
-  if (!person) return { ...out, error: 'who' };
+  if (!person && requirePerson) return { ...out, error: 'who' };
   text = text.slice(matched.length).trim();
 
   // ยอด — ตัวเลขแรก แล้วตัดคำว่าบาทที่ตามหลัง
@@ -67,6 +67,17 @@ export function parseSplitLine(line, { people, mode, date, today }) {
   if (!(amount > 0 && amount < 100000000)) return { ...out, person, error: 'amount' };
   const after = text.slice(num.index + num[0].length).replace(CURRENCY, '');
   text = `${text.slice(0, num.index)} ${after}`.replace(/\s+/g, ' ').trim();
+
+  // ไม่ได้บอกชื่อ (ช่องพิมพ์เร็วในฟอร์ม) — ฟอร์มเป็นคนเลือกว่าใครจ่าย
+  if (!person) {
+    let half = false;
+    if (HALF_TAIL.test(text)) {
+      half = true;
+      text = text.replace(HALF_TAIL, '').trim();
+    }
+    if (!text) return { ...out, error: 'what' };
+    return { raw, ok: true, kind: 'item', person: null, amount: half ? round(amount / 2) : amount, total: half ? amount : null, name: text.slice(0, 200), date: lineDate, half };
+  }
 
   const other = people.find((p) => p.email !== person)?.email;
 
