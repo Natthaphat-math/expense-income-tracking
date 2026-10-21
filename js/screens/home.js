@@ -11,6 +11,7 @@ import {
 import { openPicker, pageHeader } from '../ui.js';
 import { icon, categoryTile } from '../icons.js';
 import { splitCard } from './split.js';
+import { splitLogCard } from './split-log.js';
 
 const WEEKDAY_LONG = new Intl.DateTimeFormat('th-TH-u-ca-gregory', { weekday: 'long' });
 
@@ -53,6 +54,7 @@ export function renderDay(app) {
     summaryCard(app, day, rows),
     app.backupBanner(),
     splitCard(app),
+    splitLogCard(app),
     sortPrompt(app),
     quickAdd(app, day),
     el('section', { class: 'day-list' },

@@ -1766,3 +1766,17 @@ body.has-split-select .toast-host { bottom: calc(var(--safe-bottom) + 140px); }
 .split-balance-group .split-balance-actions { margin-top: 8px; }
 .version-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .version-row .field-hint { margin: 0; }
+
+/* บันทึกจากหารกัน */
+.split-log-card { margin-top: 10px; }
+.split-log-head { font-size: 13.5px; font-weight: 650; color: var(--ink-soft); margin: 14px 0 6px; }
+.split-log-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0; background: var(--surface); border-radius: var(--radius-sm); box-shadow: var(--shadow); overflow: hidden; }
+.split-log-row + .split-log-row { border-top: 1px solid var(--line); }
+.split-log-pick { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 56px; padding: 10px 12px; text-align: left; color: var(--ink); }
+.split-log-pick:active { background: var(--surface-sunk); }
+.split-log-pick .split-tick-mark { flex: none; display: inline-grid; place-items: center; }
+.split-log-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.split-log-title { font-weight: 600; }
+.split-log-sub { font-size: 13px; color: var(--ink-soft); }
+.split-log-warn { font-size: 13px; color: var(--warn); }
+.split-log-amount { flex: none; font-weight: 600; font-variant-numeric: tabular-nums; }

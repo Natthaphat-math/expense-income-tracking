@@ -22,7 +22,7 @@ service cloud.firestore {
     }
 
     function validTx(d) {
-      return d.keys().hasOnly(['id','kind','name','amount','type','group','date','createdAt','updatedAt','deleted','slipRef','slipHash','syncedAt'])
+      return d.keys().hasOnly(['id','kind','name','amount','type','group','date','createdAt','updatedAt','deleted','slipRef','slipHash','syncedAt','splitRef'])
         && d.keys().hasAll(['id','kind','name','group','date','createdAt','updatedAt','deleted'])
         && d.id is string && d.id.size() <= 64
         && d.kind in ['income','expense']
@@ -39,7 +39,9 @@ service cloud.firestore {
         && (!('slipHash' in d) || d.slipHash == null
             || (d.slipHash is string && d.slipHash.matches('^[0-9a-f]{64}$')))
         // เวลาที่ถึงเซิร์ฟเวอร์ (serverTimestamp) — ใช้ดึงเฉพาะที่เปลี่ยนตั้งแต่ซิงก์ครั้งก่อน ปลอมเวลาไม่ได้
-        && (!('syncedAt' in d) || d.syncedAt == request.time);
+        && (!('syncedAt' in d) || d.syncedAt == request.time)
+        // บันทึกมาจากรายการหารกันไหน (id ของรายการหารกัน)
+        && (!('splitRef' in d) || (d.splitRef is string && d.splitRef.matches('^[A-Za-z0-9_-]{1,64}$')));
     }
 
     function validCategory(c) {
