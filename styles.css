@@ -1764,3 +1764,5 @@ body.has-split-select .toast-host { bottom: calc(var(--safe-bottom) + 140px); }
 .split-balance-group { padding: 14px 16px 12px; }
 .split-balance-group .hero-amount { font-size: 34px; }
 .split-balance-group .split-balance-actions { margin-top: 8px; }
+.version-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.version-row .field-hint { margin: 0; }

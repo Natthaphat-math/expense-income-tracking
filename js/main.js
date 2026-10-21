@@ -15,7 +15,8 @@ import { renderSettings } from './screens/settings.js';
 import { renderSort } from './screens/sort.js';
 import { renderSlips } from './screens/slips.js';
 import { renderSplit } from './screens/split.js';
-import { SplitService } from './split-service.js';
+import { SplitService, lastRole } from './split-service.js';
+import { setupUpdates, resumeAfterUpdate } from './update.js';
 import { handleSignInLinkOnLoad } from './screens/sync-ui.js';
 import { SyncManager } from './sync.js';
 import { SYNC_ENABLED } from './firebase-config.js';
@@ -58,7 +59,9 @@ class App {
     this.store = store;
     this.root = $('#app');
     this.bar = $('#bottom-bar');
-    this.stack = [{ name: 'day', options: {} }];
+    // อีกคนในหารกัน: เปิดมาที่หน้าหารกันเลย (จำจากครั้งก่อน) ไม่ต้องวาดหน้ารายรับรายจ่ายก่อน
+    this.startedAsPartner = SYNC_ENABLED && lastRole() === 'partner';
+    this.stack = [{ name: this.startedAsPartner ? 'split' : 'day', options: {} }];
     this.sync = null; // SyncManager จะถูกใส่ให้ทีหลัง (ไม่บล็อกการเปิดแอป)
     this.state = {
       dayISO: entryDayISO(),
@@ -98,7 +101,9 @@ class App {
 
   /** บัญชีของอีกคนในหารกัน — เห็นแค่หน้าหารกันกับตั้งค่า ไม่มีข้อมูลรายรับรายจ่ายส่วนตัว */
   get partnerMode() {
-    return this.split?.role === 'partner';
+    if (this.split?.role === 'partner') return true;
+    // ระหว่างเชื่อมต่อ เชื่อบทบาทครั้งก่อนไว้ก่อน
+    return this.startedAsPartner && this.split?.status === 'loading';
   }
 
   render() {
@@ -228,10 +233,12 @@ async function boot() {
   ensureIconSprite();
   const app = new App(store);
   globalThis.__app = app; // ช่วยตรวจสอบตอนพัฒนา
+  if (SYNC_ENABLED) startSplit(app);
+  resumeAfterUpdate(app);
   app.render();
 
   requestPersistentStorage();
-  registerServiceWorker();
+  setupUpdates(app);
   startSync(app);
 }
 
@@ -241,7 +248,6 @@ async function boot() {
  */
 async function startSync(app) {
   if (!SYNC_ENABLED) return;
-  startSplit(app);
   try {
     const sync = new SyncManager(app.store);
     app.sync = sync;
@@ -265,11 +271,18 @@ async function startSync(app) {
 function startSplit(app) {
   const split = new SplitService();
   app.split = split;
-  let lastRole = null;
+  let previousRole = null;
   split.addEventListener('change', () => {
     const role = split.role;
-    const roleChanged = role !== lastRole;
-    lastRole = role;
+    const roleChanged = role !== previousRole;
+    previousRole = role;
+    // เปิดมาที่หารกันเพราะครั้งก่อนเป็นอีกคน แต่ครั้งนี้ไม่ใช่ (ออกจากระบบ/เปลี่ยนบัญชี) — กลับหน้าปกติ
+    if (app.startedAsPartner && split.status !== 'loading' && role !== 'partner') {
+      app.startedAsPartner = false;
+      if (app.stack.length === 1 && app.current.name === 'split') app.stack = [{ name: 'day', options: {} }];
+      app.render();
+      return;
+    }
     const here = app.current.name;
     // ไม่วาดทับฟอร์มที่กำลังพิมพ์อยู่
     if (here === 'log' || here === 'slips') return;
@@ -289,16 +302,6 @@ async function requestPersistentStorage() {
   } catch (err) {
     console.warn('ขอพื้นที่เก็บถาวรไม่สำเร็จ', err);
   }
-}
-
-function registerServiceWorker() {
-  if (!('serviceWorker' in navigator)) return;
-  if (location.protocol === 'file:') return;
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch((err) => {
-      console.warn('ลงทะเบียน service worker ไม่สำเร็จ', err);
-    });
-  });
 }
 
 boot();

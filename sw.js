@@ -1,7 +1,7 @@
 // service worker แบบเรียบง่าย — แคชไฟล์ของแอปไว้ให้เปิดได้ตอนออฟไลน์
 // ข้อมูลของผู้ใช้อยู่ใน localStorage ไม่ได้ผ่านที่นี่
 
-const CACHE = 'tet-v15';
+const CACHE = 'tet-v16';
 
 // ไฟล์ของตัวอ่านสลิป (ราว 5 MB) — แคชแยก ไม่ลบตอนอัปเดตแอป
 // ชื่อโฟลเดอร์มีเลขเวอร์ชัน ไฟล์จึงไม่เปลี่ยนที่เดิม ใช้แคชได้เลยไม่ต้องเช็กของใหม่
@@ -56,6 +56,7 @@ const ASSETS = [
   './js/remote.js',
   './js/firestore-adapter.js',
   './js/sync.js',
+  './js/update.js',
 ];
 
 // SDK ของ Firebase โหลดจาก gstatic — แคชไว้เพื่อให้เปิดแอปตอนออฟไลน์ได้เร็ว
@@ -66,9 +67,15 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE)
       // ไฟล์ที่โหลดไม่ได้ไม่ควรทำให้ติดตั้งล้มทั้งชุด
-      .then((cache) => Promise.allSettled(ASSETS.map((url) => cache.add(url))))
-      .then(() => self.skipWaiting()),
+      // cache: 'reload' = ข้ามแคชของเบราว์เซอร์ ไม่งั้นอาจได้ไฟล์เก่าจาก GitHub Pages (เก็บไว้ 10 นาที)
+      .then((cache) => Promise.allSettled(ASSETS.map((url) => cache.add(new Request(url, { cache: 'reload' }))))),
+    // ไม่สลับเอง — แอปเป็นคนสั่งตอนที่ปลอดภัย (ไม่มีฟอร์มเปิดค้าง) ดู js/update.js
   );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'skip-waiting') self.skipWaiting();
+  if (event.data?.type === 'version') event.ports[0]?.postMessage({ version: CACHE });
 });
 
 self.addEventListener('activate', (event) => {

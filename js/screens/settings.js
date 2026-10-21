@@ -16,6 +16,7 @@ import {
 import { addCategoryFlow } from './log.js';
 import { syncCard } from './sync-ui.js';
 import { shortcutsCard } from './split-shortcuts.js';
+import { checkNow, currentVersion } from '../update.js';
 
 export function renderSettings(app) {
   const host = el('div', { class: 'screen screen-settings' });
@@ -69,7 +70,27 @@ export function renderSettings(app) {
           }, label))),
         el('p', { class: 'field-hint' }, 'ใช้กับกราฟสัปดาห์และปฏิทิน · ตั้งแยกแต่ละเครื่อง'),
       ),
+      versionRow(),
     );
+  }
+
+  /** เวอร์ชันที่ใช้อยู่ + ตรวจหาอัปเดตเอง (ปกติแอปอัปเดตให้เองตอนไม่ได้ใช้งาน) */
+  function versionRow() {
+    const label = el('span', { class: 'field-hint' }, 'เวอร์ชัน …');
+    currentVersion().then((v) => { label.textContent = v ? `เวอร์ชัน ${v.replace(/^tet-/, '')}` : 'เวอร์ชัน —'; });
+    const button = el('button', {
+      class: 'btn btn-small btn-ghost', type: 'button',
+      onclick: async () => {
+        button.disabled = true;
+        button.textContent = 'กำลังตรวจ…';
+        const result = await checkNow(app);
+        if (result === 'updating') return; // หน้าจะโหลดใหม่เอง
+        button.disabled = false;
+        button.textContent = 'ตรวจหาอัปเดต';
+        toast({ latest: 'ใช้เวอร์ชันล่าสุดอยู่แล้ว', offline: 'ต่อเน็ตไม่ได้ ลองใหม่ทีหลัง' }[result] ?? 'ตรวจไม่ได้บนเครื่องนี้');
+      },
+    }, 'ตรวจหาอัปเดต');
+    return el('div', { class: 'version-row' }, label, button);
   }
 
   // ------------------------------------------------------------- สำรองข้อมูล
