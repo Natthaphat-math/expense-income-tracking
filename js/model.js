@@ -154,7 +154,13 @@ export function makeTransaction(input) {
 export function withSlip(tx, source) {
   if (validSlipRef(source?.slipRef)) tx.slipRef = source.slipRef;
   if (validSlipHash(source?.slipHash)) tx.slipHash = source.slipHash;
+  if (validSplitRef(source?.splitRef)) tx.splitRef = source.splitRef;
   return tx;
+}
+
+/** id ของรายการหารกันที่รายการนี้บันทึกมาจาก (กันเสนอซ้ำ และตามแก้เมื่อหารกันเปลี่ยน) */
+export function validSplitRef(value) {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(value);
 }
 
 /** "004:012345678901ABC00001" — รหัสธนาคาร : เลขอ้างอิงจาก QR ของสลิป (ตรงกับกฎ Firestore) */

@@ -195,7 +195,7 @@ export class SyncManager extends EventTarget {
       let legacyAt = legacy ? cursor.legacyAt : null;
       if (toPush.length > 0) {
         if (legacy) {
-          await this.adapter.putMany(toPush);
+          await this.adapter.putMany(toPush, { compat: true });
         } else {
           try {
             await this.adapter.putMany(toPush, { stamp: true });
@@ -203,7 +203,7 @@ export class SyncManager extends EventTarget {
             // ยังไม่ได้เผยแพร่กฎรุ่นใหม่ — ส่งแบบเดิมไปก่อน แล้วใช้การซิงก์เต็มจนกว่ากฎจะพร้อม
             if (err?.code !== 'permission-denied') throw err;
             legacyAt = Date.now();
-            await this.adapter.putMany(toPush);
+            await this.adapter.putMany(toPush, { compat: true });
           }
         }
       }

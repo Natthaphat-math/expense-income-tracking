@@ -6,7 +6,7 @@
 // ที่อยู่ข้อมูล: users/{uid}/transactions/{id} และ users/{uid}/meta/settings
 
 import { loadFirebase } from './remote.js';
-import { validSlipRef, validSlipHash } from './model.js';
+import { validSlipRef, validSlipHash, validSplitRef } from './model.js';
 
 /** ฟิลด์ที่กฎใน Firestore ยอมรับ — ส่งเกินไปกฎจะปฏิเสธทั้งเอกสาร */
 const TX_FIELDS = ['id', 'kind', 'name', 'amount', 'type', 'group', 'date', 'createdAt', 'updatedAt', 'deleted'];
@@ -24,6 +24,7 @@ export function toFirestoreDoc(tx) {
   // ฟิลด์ของสลิปส่งเฉพาะเมื่อมีค่า — รายการที่พิมพ์เองหน้าตาเหมือนเดิมทุกอย่าง
   if (validSlipRef(tx.slipRef)) doc.slipRef = tx.slipRef;
   if (validSlipHash(tx.slipHash)) doc.slipHash = tx.slipHash;
+  if (validSplitRef(tx.splitRef)) doc.splitRef = tx.splitRef;
   return doc;
 }
 
@@ -85,8 +86,11 @@ export class FirestoreAdapter {
   }
 
   /** เขียนทีละชุด — Firestore จำกัด batch ละ 500 การเขียน */
-  /** stamp = ใส่เวลาเซิร์ฟเวอร์ (syncedAt) ด้วย — กฎรุ่นเก่ายังไม่รู้จักฟิลด์นี้ */
-  async putMany(txs, { stamp = false } = {}) {
+  /**
+   * stamp = ใส่เวลาเซิร์ฟเวอร์ (syncedAt) ด้วย
+   * compat = ตัดฟิลด์ที่กฎรุ่นเก่ายังไม่รู้จัก (splitRef) — ใช้ตอนยังไม่ได้เผยแพร่กฎใหม่
+   */
+  async putMany(txs, { stamp = false, compat = false } = {}) {
     if (txs.length === 0) return txs;
     const fb = await this._fb();
     const collection = this._txCollection(fb);
@@ -96,6 +100,7 @@ export class FirestoreAdapter {
       const batch = fb.storeMod.writeBatch(fb.db);
       for (const tx of slice) {
         const data = toFirestoreDoc(tx);
+        if (compat) delete data.splitRef;
         if (stamp) data.syncedAt = fb.storeMod.serverTimestamp();
         batch.set(fb.storeMod.doc(collection, tx.id), data);
       }

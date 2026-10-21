@@ -124,6 +124,14 @@ test('ฟิลด์ของสลิป: รูปแบบถูกต้อ
   await assertFails(setDoc(txRef(db), validTx({ slipImage: 'data:image/png;base64,...' })));
 });
 
+test('splitRef: id รูปแบบเดียวกับรายการหารกันเท่านั้น', async () => {
+  const db = ownerDb();
+  await assertSucceeds(setDoc(txRef(db), validTx({ splitRef: 'm1abc-DEF_9' })));
+  await assertFails(setDoc(txRef(db), validTx({ splitRef: '<x>' })));
+  await assertFails(setDoc(txRef(db), validTx({ splitRef: 'a'.repeat(65) })));
+  await assertFails(setDoc(txRef(db), validTx({ splitRef: 5 })));
+});
+
 test('syncedAt ต้องเป็นเวลาของเซิร์ฟเวอร์เท่านั้น', async () => {
   const db = ownerDb();
   await assertSucceeds(setDoc(txRef(db), validTx({ syncedAt: serverTimestamp() })));

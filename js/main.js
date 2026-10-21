@@ -22,6 +22,10 @@ import { SyncManager } from './sync.js';
 import { SYNC_ENABLED } from './firebase-config.js';
 
 const BACKUP_REMINDER_DAYS = 14;
+/** ซิงก์อยู่แล้ว ข้อมูลมีอีกชุดบนคลาวด์ — ไฟล์สำรองเป็นแค่ชุดสำรองนอกระบบ เตือนห่าง ๆ พอ */
+const BACKUP_REMINDER_DAYS_SYNCED = 90;
+/** ถือว่าซิงก์ใช้ได้ ถ้าซิงก์สำเร็จภายในกี่วัน */
+const SYNC_FRESH_DAYS = 7;
 const BACKUP_SNOOZE_DAYS = 7;
 const SNOOZE_KEY = 'tet:backup-snooze-until';
 
@@ -186,14 +190,23 @@ class App {
     const last = this.store.settings.lastBackupAt;
     const lastMs = last ? Date.parse(last) : null;
     const days = lastMs ? Math.floor((Date.now() - lastMs) / 86400000) : null;
-    if (days !== null && days < BACKUP_REMINDER_DAYS) return null;
+    // อ่านจากที่จำไว้ในเครื่อง — ตอนเปิดแอปยังไม่รู้ว่าเข้าสู่ระบบอยู่ไหม (ออกจากระบบแล้วจะเก่าลงเอง)
+    let syncedMs = 0;
+    try { syncedMs = Date.parse(localStorage.getItem('tet:last-sync:v1') ?? '') || 0; } catch { /* ถือว่าไม่ได้ซิงก์ */ }
+    const synced = Date.now() - syncedMs < SYNC_FRESH_DAYS * 86400000;
+    const every = synced ? BACKUP_REMINDER_DAYS_SYNCED : BACKUP_REMINDER_DAYS;
+    // ซิงก์อยู่และไม่เคยสำรองเป็นไฟล์ — นับจากวันที่ซิงก์ไม่ได้ จึงเตือนครั้งแรกเมื่อมีข้อมูลนานพอ
+    if (synced && days === null) return null;
+    if (days !== null && days < every) return null;
 
     return el('div', { class: 'banner' },
       el('div', { class: 'banner-text' },
         el('strong', {}, 'ถึงเวลาสำรองข้อมูลแล้ว'),
-        el('span', {}, days === null
-          ? 'ยังไม่เคยสำรองข้อมูล'
-          : `ครั้งล่าสุดผ่านมา ${days} วัน`),
+        el('span', {}, synced
+          ? `ข้อมูลซิงก์อยู่แล้ว · ไฟล์สำรองล่าสุด ${days} วันก่อน (เก็บไว้นอกระบบเผื่อฉุกเฉิน)`
+          : days === null
+            ? 'ยังไม่เคยสำรองข้อมูล'
+            : `ครั้งล่าสุดผ่านมา ${days} วัน`),
       ),
       el('div', { class: 'banner-actions' },
         el('button', {
