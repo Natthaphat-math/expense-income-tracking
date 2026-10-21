@@ -10,6 +10,54 @@
 // การโอนคืนที่ยังไม่เคลียร์ จะถูกนำไปหักรายการเก่าสุดก่อน (เพื่อบอกว่ารายการไหนจ่ายแล้วบ้าง)
 
 export const SPLIT_KINDS = ['item', 'payment'];
+
+/**
+ * กลุ่ม — แต่ละกลุ่มมียอดค้างและการโอนคืนของตัวเอง ไม่หักลบข้ามกลุ่ม
+ * (เช่นค่าบ้านโอนคืนจากอีกบัญชี) words = คำในชื่อรายการที่จัดเข้ากลุ่มให้เอง
+ */
+export const BUCKETS = [
+  { id: 'general', label: 'ทั่วไป', words: [] },
+  { id: 'home', label: 'ค่าบ้าน', words: ['ค่าเน็ต', 'ค่าอินเทอร์เน็ต', 'อินเทอร์เน็ต', 'เน็ตบ้าน', 'ค่าไฟ', 'ค่าน้ำ', 'ค่าเช่า', 'ค่าส่วนกลาง', 'ค่าห้อง'] },
+];
+
+/** กลุ่มที่ควรเป็นจากชื่อรายการ */
+export function bucketFor(name) {
+  const text = String(name ?? '').toLowerCase();
+  return BUCKETS.find((b) => b.words.some((w) => text.includes(w)))?.id ?? 'general';
+}
+
+export function bucketLabel(id) {
+  return BUCKETS.find((b) => b.id === id)?.label ?? 'ทั่วไป';
+}
+
+/**
+ * ทางลัด — รายการที่ใส่บ่อย กดแล้วได้ฟอร์มที่กรอกไว้ให้
+ * payer = อีเมลคนจ่าย, mode full = อีกฝ่ายค้างทั้งหมด, half = หารครึ่ง, amount ว่างได้ (ยอดไม่ตายตัว)
+ */
+export function sanitizeShortcut(raw, members) {
+  if (!raw || typeof raw !== 'object') return null;
+  if (!ID_RE.test(raw.id ?? '')) return null;
+  const name = typeof raw.name === 'string' ? raw.name.trim().slice(0, 60) : '';
+  if (!name || !members.includes(raw.payer)) return null;
+  return {
+    id: raw.id,
+    name,
+    payer: raw.payer,
+    mode: raw.mode === 'half' ? 'half' : 'full',
+    amount: isAmount(raw.amount) ? Math.round(raw.amount * 100) / 100 : null,
+    bucket: BUCKETS.some((b) => b.id === raw.bucket) ? raw.bucket : 'general',
+    order: Number.isInteger(raw.order) && raw.order >= 0 && raw.order < 1000 ? raw.order : 999,
+  };
+}
+
+/** ทางลัดเริ่มต้น: เขาจ่ายค่าเน็ต (หารครึ่ง) ค่าไฟ (เธอค้างทั้งหมด) เธอจ่ายรถเมล์ให้ */
+export function defaultShortcuts(owner, partner) {
+  return [
+    { id: 'default-net', name: 'ค่าเน็ต', payer: partner, mode: 'half', amount: null, bucket: 'home', order: 0 },
+    { id: 'default-power', name: 'ค่าไฟ', payer: partner, mode: 'full', amount: null, bucket: 'home', order: 1 },
+    { id: 'default-bus', name: 'รถเมล์', payer: owner, mode: 'full', amount: null, bucket: 'general', order: 2 },
+  ];
+}
 export const MAX_SPLIT_AMOUNT = 100000000;
 
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -56,6 +104,7 @@ export function sanitizeSplit(raw, members) {
     settledAt: stamp(d.settledAt) ? d.settledAt : null,
     // รายการเก่า (ก่อนมีฟิลด์นี้) ที่เคลียร์แล้ว นับเป็นโอนแล้ว
     settledAs: d.settled === true ? (d.settledAs === 'forgiven' ? 'forgiven' : 'paid') : null,
+    bucket: BUCKETS.some((b) => b.id === d.bucket) ? d.bucket : 'general',
     createdBy: d.createdBy,
     createdAt: stamp(d.createdAt) ? d.createdAt : 0,
     updatedAt: stamp(d.updatedAt) ? d.updatedAt : 0,
@@ -86,6 +135,8 @@ export function toSplitDoc(entry, by, now = Date.now()) {
   };
   // ส่งเฉพาะตอนเคลียร์แล้ว — รายการที่ยังค้างหน้าตาเหมือนเดิม (กฎเก่ายังรับได้)
   if (doc.settled) doc.settledAs = entry.settledAs === 'forgiven' ? 'forgiven' : 'paid';
+  // กลุ่มทั่วไปไม่ต้องส่ง (ค่าเริ่มต้น) — รายการที่ไม่ได้อยู่ในค่าบ้านจึงไม่ต้องพึ่งกฎใหม่
+  if (entry.bucket && entry.bucket !== 'general' && BUCKETS.some((b) => b.id === entry.bucket)) doc.bucket = entry.bucket;
   return doc;
 }
 

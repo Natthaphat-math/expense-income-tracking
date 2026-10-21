@@ -343,3 +343,28 @@ test('หารกัน: settledAs รับเฉพาะ paid / forgiven', a
   await assertFails(setDoc(splitRef(db, 'f4'), split(PARTNER, { id: 'f4', settled: true, settledAs: 'gift' })));
   await assertFails(setDoc(splitRef(db, 'f5'), split(PARTNER, { id: 'f5', settled: true, settledAs: 1 })));
 });
+
+test('หารกัน: bucket รับเฉพาะ general / home', async () => {
+  await seedPair();
+  const db = partnerDb();
+  await assertSucceeds(setDoc(splitRef(db, 'b1'), split(PARTNER, { id: 'b1', bucket: 'home' })));
+  await assertSucceeds(setDoc(splitRef(db, 'b2'), split(PARTNER, { id: 'b2', bucket: 'general' })));
+  await assertFails(setDoc(splitRef(db, 'b3'), split(PARTNER, { id: 'b3', bucket: 'party' })));
+});
+
+test('ทางลัด: สมาชิกสองคนเพิ่ม แก้ ลบได้ รูปแบบต้องถูก คนนอกเข้าไม่ได้', async () => {
+  await seedPair();
+  const ref = (db, id = 'sc1') => doc(db, 'pairs', PAIR, 'shortcuts', id);
+  const sc = (by, over = {}) => ({ id: 'sc1', name: 'ค่าเน็ต', payer: PARTNER, mode: 'half', amount: null, bucket: 'home', order: 0, updatedAt: 1792000000000, updatedBy: by, ...over });
+  await assertSucceeds(setDoc(ref(partnerDb()), sc(PARTNER)));
+  await assertSucceeds(getDoc(ref(ownerDb())));
+  await assertSucceeds(setDoc(ref(ownerDb()), sc(OWNER, { name: 'ค่าอินเทอร์เน็ต', amount: 321 })));
+  for (const over of [{ payer: STRANGER }, { mode: 'third' }, { bucket: 'x' }, { name: '' }, { name: 'x'.repeat(61) }, { amount: -1 }, { order: 1000 }, { extra: 1 }, { id: 'other' }]) {
+    await assertFails(setDoc(ref(partnerDb()), sc(PARTNER, over)), JSON.stringify(over));
+  }
+  await assertFails(setDoc(ref(partnerDb()), sc(OWNER)));             // ปลอมคนแก้
+  const stranger = env.authenticatedContext('x', { email: STRANGER, email_verified: true }).firestore();
+  await assertFails(getDoc(ref(stranger)));
+  await assertFails(setDoc(ref(stranger, 'sc9'), sc(STRANGER, { id: 'sc9' })));
+  await assertSucceeds(deleteDoc(ref(ownerDb())));
+});

@@ -15,6 +15,7 @@ import {
 } from '../backup.js';
 import { addCategoryFlow } from './log.js';
 import { syncCard } from './sync-ui.js';
+import { shortcutsCard } from './split-shortcuts.js';
 
 export function renderSettings(app) {
   const host = el('div', { class: 'screen screen-settings' });
@@ -32,7 +33,7 @@ export function renderSettings(app) {
         }),
         el('div', { class: 'settings-body' },
           el('div', { class: 'col col-primary' }, syncCard(app, rerender)),
-          el('div', { class: 'col col-secondary' }, displayCard()),
+          el('div', { class: 'col col-secondary' }, shortcutsCard(app), displayCard()),
         ),
       ];
     }
@@ -40,7 +41,7 @@ export function renderSettings(app) {
       pageHeader({ title: 'ตั้งค่า' }),
       el('div', { class: 'settings-body' },
         el('div', { class: 'col col-primary' }, syncCard(app, rerender), backupCard(), importCard()),
-        el('div', { class: 'col col-secondary' }, displayCard(), categoriesCard(), budgetsCard(), helpCard()),
+        el('div', { class: 'col col-secondary' }, displayCard(), shortcutsCard(app), categoriesCard(), budgetsCard(), helpCard()),
       ),
     ];
   }
