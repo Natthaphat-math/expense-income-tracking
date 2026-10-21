@@ -27,6 +27,17 @@ export function toFirestoreDoc(tx) {
   return doc;
 }
 
+/**
+ * แปลง syncedAt (Timestamp ของ Firestore) เป็นไมโครวินาที หรือ null
+ * ละเอียดถึงไมโครวินาที (ไม่ใช่มิลลิวินาที) — ไม่งั้นชุดล่าสุดจะถูกอ่านซ้ำทุกครั้ง
+ * ยังไม่ถึงเซิร์ฟเวอร์ (เขียนตอนออฟไลน์) = null
+ */
+function withSyncedAt(data) {
+  const at = data?.syncedAt;
+  const us = typeof at?.seconds === 'number' ? at.seconds * 1e6 + Math.floor(at.nanoseconds / 1000) : null;
+  return { ...data, syncedAt: us };
+}
+
 export class FirestoreAdapter {
   constructor(uid) {
     this.uid = uid;
@@ -49,7 +60,19 @@ export class FirestoreAdapter {
   async getAll() {
     const fb = await this._fb();
     const snapshot = await fb.storeMod.getDocs(this._txCollection(fb));
-    return snapshot.docs.map((d) => d.data());
+    return snapshot.docs.map((d) => withSyncedAt(d.data()));
+  }
+
+  /**
+   * เฉพาะรายการที่ถึงเซิร์ฟเวอร์หลังเวลานี้ (ไมโครวินาทีตามนาฬิกาเซิร์ฟเวอร์) — อ่านไม่กี่เอกสารแทนทั้งหมด
+   * รายการที่ไม่มี syncedAt (เขียนจากแอปรุ่นเก่า) จะไม่ติดมา — การซิงก์เต็มวันละครั้งเก็บตกให้
+   */
+  async getChangedSince(us) {
+    const fb = await this._fb();
+    const { query, where, getDocs, Timestamp } = fb.storeMod;
+    const after = new Timestamp(Math.floor(us / 1e6), (us % 1e6) * 1000);
+    const snapshot = await getDocs(query(this._txCollection(fb), where('syncedAt', '>', after)));
+    return snapshot.docs.map((d) => withSyncedAt(d.data()));
   }
 
   async put(tx) {
@@ -62,7 +85,8 @@ export class FirestoreAdapter {
   }
 
   /** เขียนทีละชุด — Firestore จำกัด batch ละ 500 การเขียน */
-  async putMany(txs) {
+  /** stamp = ใส่เวลาเซิร์ฟเวอร์ (syncedAt) ด้วย — กฎรุ่นเก่ายังไม่รู้จักฟิลด์นี้ */
+  async putMany(txs, { stamp = false } = {}) {
     if (txs.length === 0) return txs;
     const fb = await this._fb();
     const collection = this._txCollection(fb);
@@ -71,7 +95,9 @@ export class FirestoreAdapter {
       const slice = txs.slice(i, i + 450);
       const batch = fb.storeMod.writeBatch(fb.db);
       for (const tx of slice) {
-        batch.set(fb.storeMod.doc(collection, tx.id), toFirestoreDoc(tx));
+        const data = toFirestoreDoc(tx);
+        if (stamp) data.syncedAt = fb.storeMod.serverTimestamp();
+        batch.set(fb.storeMod.doc(collection, tx.id), data);
       }
       await batch.commit();
     }

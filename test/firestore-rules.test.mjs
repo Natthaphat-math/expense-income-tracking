@@ -17,7 +17,7 @@ import {
   assertFails,
   assertSucceeds,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, deleteDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, where, serverTimestamp, Timestamp } from 'firebase/firestore';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const OWNER = 'owner@example.com';
@@ -122,6 +122,14 @@ test('ฟิลด์ของสลิป: รูปแบบถูกต้อ
   await assertFails(setDoc(txRef(db), validTx({ slipHash: 'A'.repeat(64) })));
   await assertFails(setDoc(txRef(db), validTx({ slipHash: 123 })));
   await assertFails(setDoc(txRef(db), validTx({ slipImage: 'data:image/png;base64,...' })));
+});
+
+test('syncedAt ต้องเป็นเวลาของเซิร์ฟเวอร์เท่านั้น', async () => {
+  const db = ownerDb();
+  await assertSucceeds(setDoc(txRef(db), validTx({ syncedAt: serverTimestamp() })));
+  await assertFails(setDoc(txRef(db), validTx({ syncedAt: Timestamp.fromMillis(Date.now()) })));
+  await assertFails(setDoc(txRef(db), validTx({ syncedAt: 123 })));
+  await assertSucceeds(getDocs(query(collection(db, 'users', OWNER_UID, 'transactions'), where('syncedAt', '>', Timestamp.fromMillis(0)))));
 });
 
 test('กลุ่มรายการที่ไม่รู้จัก เขียนไม่ได้', async () => {
